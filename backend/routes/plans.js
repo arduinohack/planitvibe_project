@@ -31,6 +31,11 @@ const { readExportQuery, buildPlanExport } = require('../utils/planExport');
 const { fetchPlaceMapPng } = require('../utils/placeMap');
 const { suggestPlaces } = require('../utils/placeSuggest');
 const { proposePlanCommand, applyPlanCommand, commandHistory } = require('../utils/aiCommand');
+const {
+  OPTIMIZE_ROLE,
+  proposeDayOptimization,
+  applyDayOptimization,
+} = require('../utils/optimizeDay');
 const { getAiClient } = require('../utils/aiProvider');
 const { attachItineraryWarnings } = require('../utils/itineraryWarnings');
 const { buildPlanWarnings } = require('../utils/planWarnings');
@@ -1285,6 +1290,77 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
     return res.json(result.places);
   } catch (err) {
     console.error('Place suggest error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+function optimizeRequest(body) {
+  const source = requestObject(body);
+  const day = source.day;
+  const mode = source.mode;
+  if (!Number.isInteger(day) || day < 1) {
+    return { error: 'Day must be a positive number' };
+  }
+  if (mode !== 'tighten' && mode !== 'buffer') {
+    return { error: 'Mode must be tighten or buffer' };
+  }
+  return { day, mode };
+}
+
+// POST /api/plans/:planId/optimize-day
+// Owner or Collaborator. Returns time shifts and does not write them.
+router.post('/:planId/optimize-day', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: OPTIMIZE_ROLE });
+    }
+    const gate = await prepareEdit(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+    const requested = optimizeRequest(req.body);
+    if (requested.error) {
+      return res.status(400).json({ message: requested.error });
+    }
+    const proposal = await proposeDayOptimization(plan, requested.day, requested.mode);
+    return res.json(proposal);
+  } catch (err) {
+    console.error('Optimize day error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/plans/:planId/optimize-day/apply
+// Owner or Collaborator. Writes the confirmed start and end times.
+router.post('/:planId/optimize-day/apply', authMiddleware, async (req, res) => {
+  const planId = String(req.params.planId || '');
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ message: 'Plan not found' });
+
+    const callerId = req.user.userId || req.user.id;
+    const role = await callerPlanRole(plan, callerId);
+    if (role !== 'Owner' && role !== 'Collaborator') {
+      return res.status(403).json({ message: OPTIMIZE_ROLE });
+    }
+    const gate = await prepareEdit(callerId);
+    if (gate.status !== 200) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+    const result = await applyDayOptimization({
+      planId,
+      callerId: String(callerId || ''),
+      changes: requestObject(req.body).changes,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('Optimize day apply error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
