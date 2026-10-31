@@ -6,6 +6,7 @@ const PlanUser = require('../models/PlanUser');
 const { Event } = require('../models/Event');
 const Attachment = require('../models/Attachment');
 const AiUsage = require('../models/AiUsage');
+const ActivityReaction = require('../models/ActivityReaction');
 
 // Idempotent. Safe on every startup. Does not change queries.
 async function ensureHotIndexes() {
@@ -14,6 +15,10 @@ async function ensureHotIndexes() {
   // Equality on activityId is the prefix of this compound index.
   await Attachment.collection.createIndex({ activityId: 1, createdAt: 1 });
   await AiUsage.collection.createIndex({ userId: 1, createdAt: -1 });
+  await ActivityReaction.collection.createIndex(
+    { activityId: 1, userId: 1, type: 1 },
+    { unique: true },
+  );
 
   const report = {
     ensured: [
@@ -21,6 +26,7 @@ async function ensureHotIndexes() {
       'Activity { planId: 1, startTime: 1 }',
       'Attachment { activityId: 1, createdAt: 1 }',
       'AiUsage { userId: 1, createdAt: -1 }',
+      'ActivityReaction { activityId: 1, userId: 1, type: 1 } unique',
     ],
     skipped: [
       'PlanUser { planId: 1, status: 1 }: PlanUser has no status field',

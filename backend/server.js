@@ -57,6 +57,7 @@ if (require.main === module) {
   // Jest loads app.js and does not listen. Presence stays on this process only.
   const server = http.createServer(app);
   const { attachPresence } = require('./realtime/presence');
+  // Keeps this io so a saved reaction can emit on the plan room.
   attachPresence(server, { allowsBrowserOrigin: app.allowsBrowserOrigin });
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
