@@ -380,6 +380,39 @@ class Plan {
     this.archivedBy = '',
   });
 
+  /// Same plan with the name and time zone from a saved itinerary snapshot.
+  Plan withSavedHeader({required String name, required String timeZone}) {
+    return Plan(
+      id: id,
+      type: type,
+      name: name,
+      destination: destination,
+      startDate: startDate,
+      endDate: endDate,
+      autoCalculateStartDate: autoCalculateStartDate,
+      autoCalculateEndDate: autoCalculateEndDate,
+      location: location,
+      budget: budget,
+      planningState: planningState,
+      timeZone: timeZone,
+      participants: participants,
+      ownerId: ownerId,
+      activityIds: activityIds,
+      createdAt: createdAt,
+      earliestStart: earliestStart,
+      latestEnd: latestEnd,
+      sourcePlanId: sourcePlanId,
+      linkedActivityIds: linkedActivityIds,
+      linkStart: linkStart,
+      linkEnd: linkEnd,
+      hiddenFields: hiddenFields,
+      status: status,
+      archiveDescription: archiveDescription,
+      archivedAt: archivedAt,
+      archivedBy: archivedBy,
+    );
+  }
+
   factory Plan.fromJson(Map<String, dynamic> json) {
     /*
     logger.i(

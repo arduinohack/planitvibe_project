@@ -20,6 +20,8 @@ import '../providers/user_provider.dart';
 import '../utils/ai_command_history.dart';
 import '../utils/activity_chain.dart';
 import '../utils/activity_time.dart';
+import '../utils/itinerary_cache.dart';
+import '../utils/itinerary_cache_binding.dart';
 import '../utils/logger.dart';
 import '../utils/place_suggestion_fill.dart';
 import '../utils/plus_upgrade.dart';
@@ -648,6 +650,7 @@ _ActivityCardContent _activityCardContent(
 }
 
 /// Driving directions when the activity has a stored Google Place ID.
+/// The maps URL is built on the device from that id. Opening it still needs a maps app.
 Uri? _activityDirectionsUri(Activity activity) {
   final placeId = activity.googlePlaceId.trim();
   if (placeId.isEmpty) return null;
@@ -1254,6 +1257,8 @@ class PlanDetailScreen extends StatefulWidget {
 class _PlanDetailScreenState extends State<PlanDetailScreen> {
   bool _loaded = false;
   int? _status;
+  String? _offlineName;
+  String? _offlineTimeZone;
   final Set<String> _reactionBusy = <String>{};
   late Plan _plan;
   Plan? _linkedSource;
@@ -1324,14 +1329,32 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       setState(() {
         _loaded = true;
         _status = status;
+        _offlineName = null;
+        _offlineTimeZone = null;
       });
       await _endSession(userProvider, planProvider, navigator);
       return;
+    }
+    if (status == null) {
+      final snapshot = await itineraryCache.read(widget.plan.id);
+      if (!mounted) return;
+      if (snapshot != null) {
+        planProvider.showSavedItinerary(snapshot.toActivities());
+        setState(() {
+          _loaded = true;
+          _status = 200;
+          _offlineName = snapshot.name;
+          _offlineTimeZone = snapshot.timeZone;
+        });
+        return;
+      }
     }
     if (status != 200) {
       setState(() {
         _loaded = true;
         _status = status;
+        _offlineName = null;
+        _offlineTimeZone = null;
       });
       return;
     }
@@ -1341,9 +1364,19 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       setState(() {
         _loaded = true;
         _status = status;
+        _offlineName = null;
+        _offlineTimeZone = null;
       });
       await _endSession(userProvider, planProvider, navigator);
       return;
+    }
+    if (saved == 200) {
+      await itineraryCache.save(
+        captureItinerary(
+          plan: _plan,
+          activities: planProvider.itineraryActivities,
+        ),
+      );
     }
     final linked = await _readLinkedPlan(planProvider, userProvider.token);
     if (!mounted) return;
@@ -1351,6 +1384,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
       setState(() {
         _loaded = true;
         _status = status;
+        _offlineName = null;
+        _offlineTimeZone = null;
       });
       await _endSession(userProvider, planProvider, navigator);
       return;
@@ -1358,6 +1393,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     setState(() {
       _loaded = true;
       _status = status;
+      _offlineName = null;
+      _offlineTimeZone = null;
     });
   }
 
@@ -1565,10 +1602,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
   }
 
   Plan _shownPlan(PlanProvider planProvider) {
+    Plan shown = _plan;
     for (final plan in planProvider.plans) {
-      if (plan.id == widget.plan.id) return plan;
+      if (plan.id == widget.plan.id) {
+        shown = plan;
+        break;
+      }
     }
-    return _plan;
+    final savedName = _offlineName;
+    final savedZone = _offlineTimeZone;
+    if (savedName == null || savedZone == null) return shown;
+    return shown.withSavedHeader(name: savedName, timeZone: savedZone);
   }
 
   Future<void> _openAttachments(Activity activity) async {
@@ -2908,6 +2952,23 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (_offlineName != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Offline — showing saved copy',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),

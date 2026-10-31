@@ -11,6 +11,7 @@ import '../models/plan_access.dart';
 import '../models/user.dart'; // Your User model with Address/Preferences
 import '../config/config.dart';
 import '../storage/token_store.dart';
+import '../utils/itinerary_cache_binding.dart';
 import '../utils/jwt_expiry.dart';
 
 enum SessionKeep { stay, login, idle }
@@ -380,6 +381,11 @@ class UserProvider extends ChangeNotifier {
       await clearBiometricPreference();
     } catch (e) {
       logger.e('Logout biometric clear error: $e');
+    }
+    try {
+      await itineraryCache.clear();
+    } catch (e) {
+      logger.e('Logout itinerary cache clear error: $e');
     }
   }
 

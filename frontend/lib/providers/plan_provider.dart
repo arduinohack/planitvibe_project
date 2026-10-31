@@ -641,6 +641,14 @@ class PlanProvider extends ChangeNotifier {
     _itineraryError = null;
   }
 
+  /// Shows a previously saved itinerary. Does not call the network.
+  void showSavedItinerary(List<Activity> activities) {
+    _storeItinerary(activities);
+    _activityWarnings = [];
+    _activityReactions = {};
+    notifyListeners();
+  }
+
   /// GET the itinerary and replace the open list. Does not show the page spinner.
   Future<int?> refreshItinerary(String planId, String? token) async {
     if (planId.isEmpty) return null;
