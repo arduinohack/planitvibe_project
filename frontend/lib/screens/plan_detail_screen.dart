@@ -1854,12 +1854,23 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Widget _itineraryDayHeader(String label) {
+  Widget _itineraryDayHeader(String label, {VoidCallback? onOptimize}) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (onOptimize != null)
+            TextButton(
+              onPressed: onOptimize,
+              child: const Text('Optimize day'),
+            ),
+        ],
       ),
     );
   }
@@ -1925,9 +1936,15 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required List<_ShownActivityTimes> shownTimes,
     required String planZone,
     required bool canChange,
+    required bool canOptimize,
     required Set<String> hiddenFields,
   }) {
-    final blocks = <Widget>[_itineraryDayHeader(day.label)];
+    final blocks = <Widget>[
+      _itineraryDayHeader(
+        day.label,
+        onOptimize: canOptimize ? () => _openOptimizeDay(day.number) : null,
+      ),
+    ];
     if (indexes.isEmpty) {
       blocks.add(
         const Padding(
@@ -2745,6 +2762,37 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     if (result == true) await _load();
   }
 
+  Future<void> _openOptimizeDay(int day) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final shown = _shownPlan(planProvider);
+    final activities = activitiesByUtcStart(planProvider.itineraryActivities);
+    final shownTimes = _shownActivityTimes(activities);
+    final daySpan = planItinerarySpan(
+      starts: [for (final time in shownTimes) time.start],
+      ends: [for (final time in shownTimes) time.end ?? time.start],
+      planTimeZone: shown.timeZone,
+    );
+    if (daySpan.isEmpty) return;
+    final result = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _OptimizeDaySheet(
+        planId: widget.plan.id,
+        days: daySpan,
+        initialDay: day,
+        planTimeZone: shown.timeZone,
+      ),
+    );
+    if (!mounted || result == null) return;
+    if (result == 'unauthorized') {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result == true) await _load();
+  }
+
   bool _showLinkMyPlan(Plan plan) {
     if (plan.sourcePlanId.trim().isNotEmpty) return false;
     if (plan.id == widget.plan.id &&
@@ -3152,6 +3200,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       shownTimes: shownTimes,
                       planZone: shown.timeZone,
                       canChange: canChange,
+                      canOptimize: canChange && !readOnly,
                       hiddenFields: hiddenFields,
                     ),
             ],
@@ -3618,6 +3667,251 @@ class _AiEditSheetState extends State<_AiEditSheet> {
               ),
             ),
             if (_loading) const LinearProgressIndicator(),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OptimizeDaySheet extends StatefulWidget {
+  final String planId;
+  final List<PlanItineraryDay> days;
+  final int initialDay;
+  final String planTimeZone;
+
+  const _OptimizeDaySheet({
+    required this.planId,
+    required this.days,
+    required this.initialDay,
+    required this.planTimeZone,
+  });
+
+  @override
+  State<_OptimizeDaySheet> createState() => _OptimizeDaySheetState();
+}
+
+class _OptimizeDaySheetState extends State<_OptimizeDaySheet> {
+  late int _day;
+  var _mode = 'tighten';
+  var _loading = false;
+  var _applying = false;
+  var _request = 0;
+  String? _error;
+  String _summary = '';
+  List<Map<String, dynamic>> _changes = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    final known = widget.days.any((day) => day.number == widget.initialDay);
+    _day = known ? widget.initialDay : widget.days.first.number;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadProposal();
+    });
+  }
+
+  bool get _busy => _loading || _applying;
+
+  void _chooseDay(int? value) {
+    if (value == null || value == _day || _applying) return;
+    setState(() {
+      _day = value;
+      _changes = const [];
+      _summary = '';
+      _error = null;
+    });
+    _loadProposal();
+  }
+
+  void _chooseMode(Set<String> next) {
+    final mode = next.first;
+    if (mode == _mode || _applying) return;
+    setState(() {
+      _mode = mode;
+      _changes = const [];
+      _summary = '';
+      _error = null;
+    });
+    _loadProposal();
+  }
+
+  Future<void> _loadProposal() async {
+    final request = ++_request;
+    setState(() => _loading = true);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final result = await planProvider.proposeOptimizeDay(
+      planId: widget.planId,
+      day: _day,
+      mode: _mode,
+      token: userProvider.token,
+    );
+    if (!mounted || request != _request) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
+      if (!mounted || request != _request) return;
+      setState(() => _loading = false);
+      return;
+    }
+    if (result.status != 200) {
+      setState(() {
+        _loading = false;
+        _error = result.error ?? 'Could not optimize this day';
+        _summary = '';
+        _changes = const [];
+      });
+      return;
+    }
+    setState(() {
+      _loading = false;
+      _summary = result.summary;
+      _changes = result.changes;
+      _error = null;
+    });
+  }
+
+  Future<void> _confirm() async {
+    if (_busy || _changes.isEmpty) return;
+    final changes = _changes;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    setState(() {
+      _applying = true;
+      _error = null;
+    });
+    final result = await planProvider.applyOptimizeDay(
+      planId: widget.planId,
+      changes: changes,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      Navigator.pop(context, 'unauthorized');
+      return;
+    }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to Plus to edit this plan.',
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      setState(() => _applying = false);
+      return;
+    }
+    if (result.status != 200) {
+      setState(() {
+        _applying = false;
+        _error = result.error ?? 'Could not update the day';
+      });
+      if (result.status == 409) await _loadProposal();
+      return;
+    }
+    Navigator.pop(context, true);
+  }
+
+  String _activityName(String id) {
+    final activities = Provider.of<PlanProvider>(
+      context,
+      listen: false,
+    ).itineraryActivities;
+    for (final activity in activities) {
+      if (activity.id != id) continue;
+      final name = activity.name.trim();
+      if (name.isNotEmpty) return name;
+    }
+    return 'Activity';
+  }
+
+  String _clock(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return 'not set';
+    return itineraryClockLabel(DateTime.tryParse(text), widget.planTimeZone);
+  }
+
+  String _changeLine(Map<String, dynamic> change) {
+    final id = (change['activityId'] ?? '').toString();
+    return '${_activityName(id)}: ${_clock(change['oldStart'])}–${_clock(change['oldEnd'])} → ${_clock(change['newStart'])}–${_clock(change['newEnd'])}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Optimize day',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            DropdownButton<int>(
+              value: _day,
+              isExpanded: true,
+              items: [
+                for (final day in widget.days)
+                  DropdownMenuItem<int>(
+                    value: day.number,
+                    child: Text(day.label),
+                  ),
+              ],
+              onChanged: _applying ? null : _chooseDay,
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 'tighten', label: Text('Tighten')),
+                ButtonSegment(value: 'buffer', label: Text('Add buffer')),
+              ],
+              selected: {_mode},
+              onSelectionChanged: _applying ? null : _chooseMode,
+            ),
+            const SizedBox(height: 12),
+            if (_summary.isNotEmpty)
+              Text(_summary, style: const TextStyle(fontSize: 16)),
+            if (_changes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final change in _changes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(_changeLine(change)),
+                ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: _busy || _changes.isEmpty ? null : _confirm,
+                  child: const Text('Confirm'),
+                ),
+                TextButton(
+                  onPressed: _applying ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+            if (_busy) const LinearProgressIndicator(),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),

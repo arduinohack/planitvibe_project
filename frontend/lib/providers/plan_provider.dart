@@ -481,6 +481,27 @@ class AiCommandApplyResult {
   const AiCommandApplyResult({this.status, this.error});
 }
 
+class OptimizeDayResult {
+  final int? status;
+  final String? error;
+  final String summary;
+  final List<Map<String, dynamic>> changes;
+
+  const OptimizeDayResult({
+    this.status,
+    this.error,
+    this.summary = '',
+    this.changes = const [],
+  });
+}
+
+class OptimizeDayApplyResult {
+  final int? status;
+  final String? error;
+
+  const OptimizeDayApplyResult({this.status, this.error});
+}
+
 String _trimmed(dynamic value) {
   if (value == null) return '';
   return value.toString().trim();
@@ -2375,6 +2396,92 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error applying an AI edit: $e');
       return const AiCommandApplyResult(error: 'Could not apply the edit');
+    }
+  }
+
+  /// POST /api/plans/:planId/optimize-day. Returns time shifts and does not save.
+  Future<OptimizeDayResult> proposeOptimizeDay({
+    required String planId,
+    required int day,
+    required String mode,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const OptimizeDayResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl + apiPlanOptimizeDay.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'day': day, 'mode': mode}),
+      );
+      if (response.statusCode != 200) {
+        return OptimizeDayResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body) ?? 'Could not optimize this day',
+        );
+      }
+      final data = json.decode(response.body);
+      if (data is! Map) {
+        return const OptimizeDayResult(
+          status: 200,
+          error: 'Could not optimize this day',
+        );
+      }
+      final raw = data['changes'];
+      final changes = <Map<String, dynamic>>[];
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is Map) changes.add(Map<String, dynamic>.from(item));
+        }
+      }
+      return OptimizeDayResult(
+        status: 200,
+        summary: (data['summary'] ?? '').toString().trim(),
+        changes: changes,
+      );
+    } catch (e) {
+      logger.e('Error proposing a day optimization: $e');
+      return const OptimizeDayResult(error: 'Could not optimize this day');
+    }
+  }
+
+  /// POST /api/plans/:planId/optimize-day/apply. Writes the confirmed times.
+  Future<OptimizeDayApplyResult> applyOptimizeDay({
+    required String planId,
+    required List<Map<String, dynamic>> changes,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const OptimizeDayApplyResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse(
+          backendBaseUrl +
+              apiPlanOptimizeDayApply.replaceAll('{planId}', planId),
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'changes': changes}),
+      );
+      if (response.statusCode != 200) {
+        return OptimizeDayApplyResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body) ?? 'Could not update the day',
+        );
+      }
+      return const OptimizeDayApplyResult(status: 200);
+    } catch (e) {
+      logger.e('Error applying a day optimization: $e');
+      return const OptimizeDayApplyResult(error: 'Could not update the day');
     }
   }
 
