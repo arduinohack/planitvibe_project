@@ -3431,7 +3431,7 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       _addLine(lines, 'Start', activity['startTime']);
       _addLine(lines, 'End', activity['endTime']);
       _addLine(lines, 'Details', activity['details']);
-      _addLine(lines, 'Place', activity['googlePlaceId']);
+      _addPlaceLine(lines, activity);
     }
     final changes = proposal['changes'];
     if (changes is Map) {
@@ -3447,6 +3447,24 @@ class _AiEditSheetState extends State<_AiEditSheet> {
       lines.add(message.trim());
     }
     return lines.join('\n');
+  }
+
+  void _addPlaceLine(List<String> lines, Map activity) {
+    final placeId = activity['googlePlaceId']?.toString().trim() ?? '';
+    if (placeId.isEmpty) return;
+    final name = activity['placeName']?.toString().trim() ?? '';
+    lines.add(name.isEmpty ? 'Place: $placeId' : 'Place: $name');
+  }
+
+  String _confirmationText() {
+    final summary = (_summary ?? '').trim();
+    final activity = _proposal == null ? null : _proposal!['activity'];
+    if (activity is! Map) return summary;
+    final placeId = activity['googlePlaceId']?.toString().trim() ?? '';
+    final name = activity['placeName']?.toString().trim() ?? '';
+    if (placeId.isEmpty || name.isEmpty || summary.contains(name)) return summary;
+    if (summary.isEmpty) return name;
+    return '$summary\n$name';
   }
 
   void _addLine(List<String> lines, String label, Object? value) {
@@ -3491,9 +3509,9 @@ class _AiEditSheetState extends State<_AiEditSheet> {
               const SizedBox(height: 12),
             ],
             if (proposal != null) ...[
-              if ((_summary ?? '').isNotEmpty)
+              if (_confirmationText().isNotEmpty)
                 Text(
-                  _summary!,
+                  _confirmationText(),
                   style: const TextStyle(fontSize: 16),
                 ),
               const SizedBox(height: 8),
