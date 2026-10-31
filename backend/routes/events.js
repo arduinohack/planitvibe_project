@@ -30,6 +30,7 @@ const {
   clearReaction,
   removeActivityReactions,
 } = require('../utils/activityReactions');
+const { emitPlanReaction } = require('../realtime/presence');
 
 function applySchedule(target, schedule) {
   if (schedule.startTime) target.startTime = schedule.startTime;
@@ -342,6 +343,18 @@ async function loadActivityForMember(activityId, callerId) {
   return { status: 200, event, role };
 }
 
+// Counts go to every joined browser. myVotes stays on the HTTP body because it is the caller only.
+function publishReaction(planId, activityId, callerId, type, summary, voted) {
+  emitPlanReaction(planId, {
+    planId: String(planId),
+    activityId: String(activityId),
+    type,
+    userId: String(callerId || ''),
+    voted: voted === true,
+    counts: summary && summary.counts,
+  });
+}
+
 // Any plan member, including a Guest. One vote per type; a second vote replaces it.
 router.post('/:id/react', authMiddleware, async (req, res) => {
   try {
@@ -351,13 +364,16 @@ router.post('/:id/react', authMiddleware, async (req, res) => {
     const loaded = await loadActivityForMember(req.params.id, callerId);
     if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
     const activityId = String(loaded.event._id);
+    const planId = String(loaded.event.planId);
     await setReaction({
       activityId,
-      planId: String(loaded.event.planId),
+      planId,
       userId: callerId,
       type: typeResult.type,
     });
-    return res.json(await reactionSummary(activityId, callerId));
+    const summary = await reactionSummary(activityId, callerId);
+    publishReaction(planId, activityId, callerId, typeResult.type, summary, true);
+    return res.json(summary);
   } catch (error) {
     console.error('Activity react error:', error);
     return res.status(500).json({ message: 'Server error' });
@@ -372,12 +388,15 @@ router.delete('/:id/react', authMiddleware, async (req, res) => {
     const loaded = await loadActivityForMember(req.params.id, callerId);
     if (loaded.status !== 200) return res.status(loaded.status).json(loaded.body);
     const activityId = String(loaded.event._id);
+    const planId = String(loaded.event.planId);
     await clearReaction({
       activityId,
       userId: callerId,
       type: typeResult.type,
     });
-    return res.json(await reactionSummary(activityId, callerId));
+    const summary = await reactionSummary(activityId, callerId);
+    publishReaction(planId, activityId, callerId, typeResult.type, summary, false);
+    return res.json(summary);
   } catch (error) {
     console.error('Activity react delete error:', error);
     return res.status(500).json({ message: 'Server error' });

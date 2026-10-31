@@ -224,10 +224,33 @@ function registerPresence(io, options = {}) {
   });
 }
 
+let reactionIo = null;
+
+function setReactionIo(io) {
+  reactionIo = io || null;
+}
+
+// HTTP has no sender socket. io.to reaches every browser that joined the plan room.
+// A missing or throwing server must not fail the vote that was already saved.
+function emitPlanReaction(planId, payload) {
+  const io = reactionIo;
+  const id = planId == null ? '' : String(planId).trim();
+  if (!io || !id) return;
+  try {
+    const target = io.to(presenceRoom(id));
+    if (!target || typeof target.emit !== 'function') return;
+    const body = payload && typeof payload === 'object' ? payload : {};
+    target.emit('reaction', body);
+  } catch (err) {
+    // Best effort. The HTTP response still returns the saved counts.
+  }
+}
+
 function attachPresence(httpServer, options = {}) {
   const allows = options.allowsBrowserOrigin || require('../app').allowsBrowserOrigin;
   const io = new Server(httpServer, { cors: presenceCors(allows) });
   registerPresence(io, options);
+  setReactionIo(io);
   return io;
 }
 
@@ -238,4 +261,6 @@ module.exports = {
   verifyClientToken,
   readHandshakeToken,
   presenceRoom,
+  setReactionIo,
+  emitPlanReaction,
 };

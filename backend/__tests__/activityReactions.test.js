@@ -9,6 +9,7 @@ const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
 const ActivityReaction = require('../models/ActivityReaction');
+const { setReactionIo, presenceRoom } = require('../realtime/presence');
 
 jest.setTimeout(30000);
 
@@ -89,6 +90,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  setReactionIo(null);
   await Promise.all([
     User.deleteMany({}),
     Plan.deleteMany({}),
@@ -264,5 +266,70 @@ describe('activity reactions', () => {
     const bad = await react(owner.token, activityId, 'love');
     expect(bad.status).toBe(400);
     expect(bad.body.message).toBe('Type must be up, down, yes, no, or maybe');
+  });
+
+  test('a react emits to the plan room and still succeeds when the socket is down', async () => {
+    const owner = await registerAndLogin('ada-react-live@example.com');
+    const planId = await createPlan(owner.token);
+    const activityId = await createActivity(owner.token, planId);
+    const emitted = [];
+    setReactionIo({
+      to(room) {
+        return {
+          emit(event, payload) {
+            emitted.push({ room, event, payload });
+          },
+        };
+      },
+    });
+
+    const voted = await react(owner.token, activityId, 'up');
+    expect(voted.status).toBe(200);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].room).toBe(presenceRoom(String(planId)));
+    expect(emitted[0].event).toBe('reaction');
+    expect(emitted[0].payload.planId).toBe(String(planId));
+    expect(emitted[0].payload.activityId).toBe(String(activityId));
+    expect(emitted[0].payload.type).toBe('up');
+    expect(emitted[0].payload.voted).toBe(true);
+    expect(emitted[0].payload.userId).toBe(String(owner.userId));
+    expect(emitted[0].payload.counts).toEqual({ up: 1, down: 0, yes: 0, no: 0, maybe: 0 });
+
+    const cleared = await request(app)
+      .delete(`/api/activities/${activityId}/react`)
+      .set(bearer(owner.token))
+      .send({ type: 'up' });
+    expect(cleared.status).toBe(200);
+    expect(emitted).toHaveLength(2);
+    expect(emitted[1].room).toBe(presenceRoom(String(planId)));
+    expect(emitted[1].event).toBe('reaction');
+    expect(emitted[1].payload.planId).toBe(String(planId));
+    expect(emitted[1].payload.activityId).toBe(String(activityId));
+    expect(emitted[1].payload.type).toBe('up');
+    expect(emitted[1].payload.voted).toBe(false);
+    expect(emitted[1].payload.counts.up).toBe(0);
+
+    const opened = await request(app)
+      .post(`/api/activities/${activityId}/poll`)
+      .set(bearer(owner.token))
+      .send({});
+    expect(opened.status).toBe(200);
+    expect(emitted).toHaveLength(2);
+
+    setReactionIo({
+      to() {
+        throw new Error('socket down');
+      },
+    });
+    const still = await react(owner.token, activityId, 'down');
+    expect(still.status).toBe(200);
+    expect(still.body.counts.down).toBe(1);
+    expect(still.body.myVotes).toEqual(['down']);
+
+    setReactionIo(null);
+    const without = await react(owner.token, activityId, 'up');
+    expect(without.status).toBe(200);
+    expect(without.body.counts).toEqual({ up: 1, down: 0, yes: 0, no: 0, maybe: 0 });
+    expect(without.body.myVotes).toEqual(['up']);
   });
 });
