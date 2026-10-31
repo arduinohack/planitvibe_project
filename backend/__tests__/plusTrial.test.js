@@ -448,7 +448,10 @@ describe('free-owner trial and Plus gating', () => {
       .send({ instruction: 'add a quiet coffee on day 2' });
     expect(proposed.status).toBe(200);
     expect(proposed.body.proposal.action).toBe('add');
-    expect(await getBalance(ada.userId)).toBe(5);
+    expect(await getBalance(ada.userId)).toBe(4.5);
+    const placesUsed = await AiUsage.find({ feature: 'suggest', provider: 'google' }).lean();
+    expect(placesUsed).toHaveLength(1);
+    expect(placesUsed[0].credits).toBe(0.5);
     const calls = axios.post.mock.calls.filter((call) => call[0] === XAI_ENDPOINT);
     expect(calls).toHaveLength(1);
     expect(calls[0][2].headers.Authorization).toBe(`Bearer ${USER_KEY}`);

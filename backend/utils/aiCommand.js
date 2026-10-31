@@ -28,9 +28,10 @@ const HISTORY_CONTENT_MAX = 2000;
 
 // Propose does not write activities. The balance is checked before a server-key
 // model call, and 1 credit is deducted after a usable proposal. A user key
-// costs nothing. Place search runs only for an add, without a second model
-// call or a second credit charge. Apply writes through activity create, update,
-// and delete. Optional history is the last 6 user and assistant turns.
+// costs nothing for that call. An add that names a place then uses Places
+// suggest, which deducts 0.5 on a cache miss and does not call the model again.
+// Apply writes through activity create, update, and delete. Optional history
+// is the last 6 user and assistant turns.
 
 const TYPE_ALIASES = {
   dinner: 'dining',
@@ -160,11 +161,46 @@ function parseModelObject(raw) {
   }
 }
 
-function activityLine(activity) {
+function planZone(plan) {
+  const zone = plan && typeof plan.timeZone === 'string' ? plan.timeZone : '';
+  if (zone && DateTime.now().setZone(zone).isValid) return zone;
+  return 'UTC';
+}
+
+function dayLabel(plan, activity) {
+  if (!plan || !plan.startDate || !activity || !activity.startTime) return '';
+  const zone = planZone(plan);
+  const start = DateTime.fromJSDate(new Date(plan.startDate), { zone: 'utc' })
+    .setZone(zone)
+    .startOf('day');
+  const when = DateTime.fromJSDate(new Date(activity.startTime), { zone: 'utc' })
+    .setZone(zone)
+    .startOf('day');
+  if (!start.isValid || !when.isValid) return '';
+  const diff = Math.round(when.diff(start, 'days').days);
+  if (!Number.isFinite(diff) || diff < 0) return '';
+  return String(diff + 1);
+}
+
+function hotelLocation(activities) {
+  const rows = Array.isArray(activities) ? activities : [];
+  for (const row of rows) {
+    if (String(row && row.type || '').toLowerCase() !== 'hotel') continue;
+    const location = clip(row.location, 200);
+    if (location) return location;
+    const name = clip(row.name, 200);
+    if (name) return name;
+  }
+  return '';
+}
+
+function activityLine(activity, plan) {
   const start = activity.startTime ? new Date(activity.startTime).toISOString() : '';
   const end = activity.endTime ? new Date(activity.endTime).toISOString() : '';
+  const day = dayLabel(plan, activity);
   return [
     String(activity._id),
+    day ? `day ${day}` : '',
     clip(activity.name, 80),
     clip(activity.type, 40),
     start,
@@ -181,9 +217,11 @@ function planContext(plan, activities) {
     `Start: ${plan.startDate ? new Date(plan.startDate).toISOString() : ''}`,
     `End: ${plan.endDate ? new Date(plan.endDate).toISOString() : ''}`,
     'Day 1 is the plan start date when that date is set.',
-    'Activities (id | name | type | start | end | location):',
   ];
-  const rows = activities.slice(0, 80).map(activityLine);
+  const hotel = hotelLocation(activities);
+  if (hotel) lines.push(`Hotel: ${hotel}`);
+  lines.push('Activities (id | day | name | type | start | end | location):');
+  const rows = activities.slice(0, 80).map((activity) => activityLine(activity, plan));
   if (!rows.length) lines.push('(none)');
   else lines.push(...rows);
   return lines.join('\n');
@@ -205,17 +243,43 @@ function commandHistory(raw) {
   return turns.slice(turns.length - HISTORY_LIMIT);
 }
 
-function phraseNotes(instruction) {
-  const lower = String(instruction || '')
+function normalizedInstruction(instruction) {
+  return String(instruction || '')
     .toLowerCase()
     .replace(/[\u2018\u2019\u201B`]/g, "'");
+}
+
+function isGapFill(instruction) {
+  const lower = normalizedInstruction(instruction);
+  if (/\bfill the free afternoon\b/.test(lower)) return true;
+  if (/\bsuggest something for the gap\b/.test(lower)) return true;
+  if (
+    /\bnear the hotel\b/.test(lower)
+    && /\b(kid-friendly|kid friendly|quiet|outdoor)\b/.test(lower)
+    && /\b(activity|something|place)\b/.test(lower)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function phraseNotes(instruction, plan, activities) {
+  const lower = normalizedInstruction(instruction);
   const dayMatch = lower.match(/\bday\s+(\d+)\b/);
   if (!dayMatch) return [];
   const day = `day ${dayMatch[1]}`;
   const notes = [];
-  if (lower.includes('free afternoon')) {
+  if (lower.includes('free afternoon') && !/\bfill the free afternoon\b/.test(lower)) {
     notes.push(
       `Phrase: add a free afternoon on ${day}. Return one add with type tour lasting about three hours in the afternoon, or action none if that afternoon is already full.`,
+    );
+  }
+  if (isGapFill(instruction)) {
+    const hotel = hotelLocation(activities);
+    const destination = clip(plan && plan.destination, 120);
+    const where = hotel || destination || 'the plan destination';
+    notes.push(
+      `Phrase: fill one open gap on ${day} with one real place near ${where}. Return one add with a title, type, location, startTime, and endTime inside that gap. Leave googlePlaceId empty. Return action none when that part of the day is already full or no place fits.`,
     );
   }
   if (/what(?:'s| is) missing/.test(lower)) {
@@ -238,10 +302,15 @@ function commandPrompt(plan, activities, instruction, history) {
     'changes on update may set title, startTime, endTime, location, and details.',
     'Leave every unused string empty.',
     'Use none with a short message when the instruction does not name one change.',
-    'Leave googlePlaceId empty.',
-    'A follow-up such as "make it later" or "something cheaper" revises the previous proposal. Use the recent conversation.',
+    'Leave googlePlaceId empty. The server attaches a real Google Place ID when the add names a place.',
+    'A follow-up such as "make it later", "make it earlier", or "something cheaper" revises the previous proposal. Use the recent conversation.',
     'For "add a free afternoon on day N", add one open block with type tour lasting about three hours in the afternoon, or use none and say the afternoon is already full.',
     'For "what\'s missing on day N?", use none and describe the gaps in message, or add one concrete suggestion.',
+    'Gap-fill instructions return one add, or action none when that part of the day is already full or no place fits:',
+    '- "Fill the free afternoon on day N with something kid-friendly near the hotel"',
+    '- "Suggest something for the gap on day N"',
+    '- "Add a kid-friendly, quiet, or outdoor activity near the hotel on day N"',
+    'For a gap-fill add, put it in the open time on that day. An afternoon is about three hours after noon. Set location to the hotel, or the plan destination, plus words such as kid-friendly, quiet, or outdoor. Leave googlePlaceId empty.',
     '',
     planContext(plan, activities),
   ];
@@ -252,7 +321,7 @@ function commandPrompt(plan, activities, instruction, history) {
       lines.push(`${label}: ${turn.content}`);
     }
   }
-  const notes = phraseNotes(instruction);
+  const notes = phraseNotes(instruction, plan, activities);
   if (notes.length) lines.push('', ...notes);
   lines.push('', `Instruction: ${instruction}`);
   return lines.join('\n');
@@ -391,6 +460,32 @@ function needsPlace(activity) {
   return PLACE_TYPES.has(activity.type);
 }
 
+function vagueHotelLocation(value) {
+  const text = clip(value, 300).toLowerCase();
+  return text === 'near the hotel'
+    || text === 'the hotel'
+    || text === 'hotel'
+    || text === 'near hotel';
+}
+
+function descriptiveWords(instruction) {
+  const lower = normalizedInstruction(instruction);
+  const words = [];
+  if (lower.includes('kid-friendly') || lower.includes('kid friendly')) words.push('kid-friendly');
+  if (/\bquiet\b/.test(lower)) words.push('quiet');
+  if (/\boutdoor\b/.test(lower)) words.push('outdoor');
+  return words.join(' ');
+}
+
+function searchBias(activity, plan, activities) {
+  const stated = clip(activity && activity.location, 300);
+  if (stated && !vagueHotelLocation(stated)) return stated;
+  const hotel = hotelLocation(activities);
+  if (hotel) return hotel;
+  if (stated) return stated;
+  return clip(plan && plan.destination, 200);
+}
+
 function addSummary(activity, placeName, zone) {
   const title = activity.title;
   const where = placeName || activity.location;
@@ -401,38 +496,57 @@ function addSummary(activity, placeName, zone) {
   return clip(`Add ${title}.`, 240);
 }
 
-function placeSearchQuery(activity) {
-  const location = clip(activity && activity.location, 200);
+function placeSearchQuery(activity, where, instruction) {
+  const location = clip(where, 200);
   const title = clip(activity && activity.title, 120);
+  let query = location || title;
   if (location && title && location.toLowerCase() !== title.toLowerCase()) {
-    return clip(`${title} ${location}`, 240);
+    query = `${title} ${location}`;
   }
-  return location || title;
+  const words = descriptiveWords(instruction);
+  if (words && query && !query.toLowerCase().includes(words.toLowerCase())) {
+    query = `${words} ${query}`;
+  }
+  return clip(query, 240);
 }
 
-async function attachPlace(activity, plan) {
-  const query = placeSearchQuery(activity);
-  if (!query) return { activity, placeName: '' };
+async function attachPlace(activity, plan, options = {}) {
+  const activities = options.activities || [];
+  const instruction = options.instruction || '';
+  const usage = options.usage;
+  const where = searchBias(activity, plan, activities);
+  const query = placeSearchQuery(activity, where, instruction);
+  if (!query) return { activity, placeName: '', address: '' };
   try {
     const result = await suggestPlaces({
       query,
       activityType: activity.type,
-      location: activity.location || '',
+      location: where,
       destination: plan && plan.destination ? String(plan.destination) : '',
       aiClient: null,
+      usage: usage && usage.userId ? {
+        userId: String(usage.userId),
+        planId: usage.planId ? String(usage.planId) : '',
+        feature: 'suggest',
+        aiClient: null,
+      } : undefined,
     });
     const places = result && result.status === 200 && Array.isArray(result.places)
       ? result.places
       : [];
     const place = places[0];
     const placeId = place ? clip(place.placeId, 200) : '';
-    if (!placeId) return { activity, placeName: '' };
-    const next = { ...activity, googlePlaceId: placeId };
+    if (!placeId) return { activity, placeName: '', address: '' };
+    const placeName = place ? clip(place.name, 120) : '';
     const address = place ? clip(place.address, 300) : '';
+    const next = { ...activity, googlePlaceId: placeId };
+    if (placeName) next.placeName = placeName;
+    if (address) next.address = address;
     if (!next.location && address) next.location = address;
-    return { activity: next, placeName: place ? clip(place.name, 120) : '' };
+    else if (address && vagueHotelLocation(next.location)) next.location = address;
+    return { activity: next, placeName, address };
   } catch (_) {
-    return { activity, placeName: '' };
+    return { activity, placeName: '', address: '' };
   }
 }
 
@@ -493,6 +607,9 @@ async function proposePlanCommand({ plan, instruction, history, aiClient, userId
     modelKey,
   );
   const built = asked.ok ? proposalFromModel(asked.parsed, activities, plan.timeZone) : null;
+  if (built && built.proposal && built.proposal.action === 'add' && isGapFill(instruction)) {
+    built.placeQuery = true;
+  }
   if (!built) {
     await noteAttempt(usage, {
       data: asked.data,
@@ -514,7 +631,11 @@ async function proposePlanCommand({ plan, instruction, history, aiClient, userId
   let summary = built.summary;
   let proposal = built.proposal;
   if (built.placeQuery && proposal.activity) {
-    const attached = await attachPlace(proposal.activity, plan);
+    const attached = await attachPlace(proposal.activity, plan, {
+      activities,
+      instruction,
+      usage: { userId, planId },
+    });
     proposal = { action: 'add', activity: attached.activity };
     summary = addSummary(attached.activity, attached.placeName, plan.timeZone);
   }

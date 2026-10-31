@@ -370,8 +370,8 @@ async function suggestPlaces({
     return { status: 400, msg: 'Query is required' };
   }
 
-  // Find places passes the caller. The plan-command lookup does not, so that
-  // search stays inside the command's 1-credit charge and is not cached.
+  // Find places and a plan-command place lookup both pass the caller.
+  // A cache miss deducts 0.5. A hit does not. No userId skips the cache and the charge.
   const placesUserId = usage && typeof usage.userId === 'string' ? usage.userId.trim() : '';
   const typeText = typeof activityType === 'string' ? activityType : '';
   const bias = biasText(

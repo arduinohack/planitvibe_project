@@ -17,7 +17,7 @@ const ActivityRevision = require('../models/ActivityRevision');
 const { Event } = require('../models/Event');
 const AiUsage = require('../models/AiUsage');
 const { getBalance } = require('../utils/aiCredits');
-const { SEARCH_URL } = require('../utils/placeSuggest');
+const { SEARCH_URL, FIELD_MASK } = require('../utils/placeSuggest');
 const { XAI_ENDPOINT } = require('../utils/aiCommand');
 
 jest.setTimeout(30000);
@@ -187,7 +187,7 @@ describe('AI command', () => {
     process.env.GOOGLE_MAPS_API_KEY = 'test-google-key';
     const owner = await registerAndLogin('ada@example.com', 'Ada');
     const planId = await createPlan(owner.token);
-    await setCredits(owner.userId, 1);
+    await setCredits(owner.userId, 1.5);
     const missing = await request(app)
       .post(command(planId))
       .set(bearer(owner.token))
@@ -234,6 +234,8 @@ describe('AI command', () => {
         endTime: '2026-10-28T19:30:00.000Z',
         details: 'Kid friendly',
         googlePlaceId: PLACE_ID,
+        placeName: 'Cafe Paris',
+        address: 'Paris, France',
       },
     });
     expect(await Event.countDocuments({ planId })).toBe(0);
@@ -634,6 +636,7 @@ describe('AI command', () => {
 
   test('what is missing can return action none', async () => {
     process.env.XAI_API_KEY = SERVER_KEY;
+    process.env.GOOGLE_MAPS_API_KEY = 'test-google-key';
     const owner = await registerAndLogin('ada@example.com', 'Ada');
     const planId = await createPlan(owner.token);
     await setCredits(owner.userId, 1);
@@ -674,6 +677,7 @@ describe('AI command', () => {
     expect(input).toContain('Instruction: what’s missing on day 2?');
     expect(await Event.countDocuments({ planId })).toBe(1);
     expect(await getBalance(owner.userId)).toBe(0);
+    expect(axios.post.mock.calls.filter((call) => call[0] === SEARCH_URL)).toHaveLength(0);
   });
 
   test('a free afternoon asks for one afternoon block', async () => {
@@ -717,5 +721,120 @@ describe('AI command', () => {
     expect(input).toContain('type tour lasting about three hours');
     expect(await Event.countDocuments({ planId })).toBe(0);
     expect(await getBalance(owner.userId)).toBe(0);
+  });
+
+  test('a gap-fill phrase proposes one add with a real place', async () => {
+    process.env.XAI_API_KEY = SERVER_KEY;
+    process.env.GOOGLE_MAPS_API_KEY = 'test-google-key';
+    const owner = await registerAndLogin('ada-gap@example.com', 'Ada');
+    const planId = await createPlan(owner.token);
+    await setCredits(owner.userId, 3);
+    const hotel = await request(app)
+      .post('/api/activities')
+      .set(bearer(owner.token))
+      .send({
+        planId,
+        name: 'Hotel Le Marais',
+        type: 'hotel',
+        location: 'Hotel Le Marais, Paris',
+        startTime: '2026-10-27T15:00:00.000Z',
+        endTime: '2026-10-30T11:00:00.000Z',
+      });
+    expect(hotel.status).toBe(201);
+
+    axios.post.mockImplementation((url, body) => {
+      if (url === SEARCH_URL) return Promise.resolve(googleOk());
+      if (url !== XAI_ENDPOINT) return Promise.resolve({ status: 500, data: {} });
+      const input = body && typeof body.input === 'string' ? body.input : '';
+      const cheaper = input.includes('Instruction: something cheaper');
+      return Promise.resolve(modelPayload({
+        action: 'add',
+        message: '',
+        activityId: '',
+        activity: {
+          title: cheaper ? 'Cheaper museum' : 'Kid-friendly park',
+          type: 'attraction',
+          location: 'near the hotel',
+          startTime: cheaper ? '2026-10-28T13:00:00.000Z' : '2026-10-28T14:00:00.000Z',
+          endTime: cheaper ? '2026-10-28T15:00:00.000Z' : '2026-10-28T17:00:00.000Z',
+          details: cheaper ? 'Lower cost' : 'Outdoor and kid-friendly',
+          googlePlaceId: 'fake-from-model',
+        },
+        changes: {
+          title: '',
+          startTime: '',
+          endTime: '',
+          location: '',
+          details: '',
+        },
+      }));
+    });
+
+    const instruction = 'Fill the free afternoon on day 2 with something kid-friendly near the hotel';
+    const proposed = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({ instruction });
+    expect(proposed.status).toBe(200);
+    expect(proposed.body.proposal.action).toBe('add');
+    expect(proposed.body.proposal.activity.title).toBe('Kid-friendly park');
+    expect(proposed.body.proposal.activity.googlePlaceId).toBe(PLACE_ID);
+    expect(proposed.body.proposal.activity.placeName).toBe('Cafe Paris');
+    expect(proposed.body.proposal.activity.address).toBe('Paris, France');
+    expect(proposed.body.proposal.activity.location).toBe('Paris, France');
+    expect(proposed.body.summary).toContain('Cafe Paris');
+    expect(await Event.countDocuments({ planId })).toBe(1);
+
+    const input = xaiCalls()[0][1].input;
+    expect(input).toContain('Fill the free afternoon on day N with something kid-friendly near the hotel');
+    expect(input).toContain('Suggest something for the gap on day N');
+    expect(input).toContain('Add a kid-friendly, quiet, or outdoor activity near the hotel on day N');
+    expect(input).toContain('Phrase: fill one open gap on day 2');
+    expect(input).toContain('Hotel Le Marais, Paris');
+    expect(input).toContain(`Instruction: ${instruction}`);
+
+    const placeCalls = axios.post.mock.calls.filter((call) => call[0] === SEARCH_URL);
+    expect(placeCalls).toHaveLength(1);
+    expect(placeCalls[0][2].headers['X-Goog-FieldMask']).toBe(FIELD_MASK);
+    expect(String(placeCalls[0][1].textQuery).toLowerCase()).toContain('kid-friendly');
+    expect(String(placeCalls[0][1].textQuery)).toContain('Hotel Le Marais, Paris');
+    const suggestRows = await AiUsage.find({ feature: 'suggest', provider: 'google' }).lean();
+    expect(suggestRows).toHaveLength(1);
+    expect(suggestRows[0].credits).toBe(0.5);
+    expect(await getBalance(owner.userId)).toBe(1.5);
+
+    const refined = await request(app)
+      .post(command(planId))
+      .set(bearer(owner.token))
+      .send({
+        instruction: 'something cheaper',
+        history: [
+          { role: 'user', content: instruction },
+          { role: 'assistant', content: proposed.body.summary },
+        ],
+      });
+    expect(refined.status).toBe(200);
+    expect(refined.body.proposal.action).toBe('add');
+    expect(refined.body.proposal.activity.title).toBe('Cheaper museum');
+    expect(refined.body.proposal.activity.googlePlaceId).toBe(PLACE_ID);
+    expect(refined.body.proposal.activity.startTime).toBe('2026-10-28T13:00:00.000Z');
+    expect(refined.body.proposal.activity.startTime)
+      .not.toBe(proposed.body.proposal.activity.startTime);
+    const refinedInput = xaiCalls()[1][1].input;
+    expect(refinedInput).toContain('Recent conversation:');
+    expect(refinedInput).toContain(`User: ${instruction}`);
+    expect(refinedInput).toContain('Instruction: something cheaper');
+    expect(await Event.countDocuments({ planId })).toBe(1);
+    expect(await getBalance(owner.userId)).toBe(0);
+
+    const applied = await request(app)
+      .post(`${command(planId)}/apply`)
+      .set(bearer(owner.token))
+      .send(refined.body.proposal);
+    expect(applied.status).toBe(201);
+    expect(applied.body.name).toBe('Cheaper museum');
+    expect(applied.body.googlePlaceId).toBe(PLACE_ID);
+    expect(applied.body.location).toBe('Paris, France');
+    expect(await Event.countDocuments({ planId })).toBe(2);
   });
 });
