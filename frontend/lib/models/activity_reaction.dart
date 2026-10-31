@@ -15,6 +15,39 @@ class ActivityReactions {
 
   bool mine(String type) => myVotes.contains(type);
 
+  /// Replaces the counts for one activity. Highlight changes only for [actorId]
+  /// when that person is the signed-in user. A thumb replaces the other thumb.
+  /// Yes, no, and maybe replace each other.
+  ActivityReactions applyLive({
+    required Map<String, int> counts,
+    required String type,
+    String actorId = '',
+    String? currentUserId,
+    bool? voted,
+  }) {
+    final nextCounts = <String, int>{
+      for (final name in types) name: counts[name] ?? 0,
+    };
+    final self = (currentUserId ?? '').trim();
+    final actor = actorId.trim();
+    final updateMine =
+        self.isNotEmpty && actor == self && types.contains(type) && voted != null;
+    if (!updateMine) {
+      return ActivityReactions(counts: nextCounts, myVotes: List<String>.from(myVotes));
+    }
+    final group = type == 'up' || type == 'down'
+        ? const ['up', 'down']
+        : const ['yes', 'no', 'maybe'];
+    final nextVotes = <String>[];
+    for (final vote in myVotes) {
+      if (voted == false && vote == type) continue;
+      if (voted == true && group.contains(vote)) continue;
+      nextVotes.add(vote);
+    }
+    if (voted == true && !nextVotes.contains(type)) nextVotes.add(type);
+    return ActivityReactions(counts: nextCounts, myVotes: nextVotes);
+  }
+
   factory ActivityReactions.fromJson(Map<String, dynamic> json) {
     final raw = json['counts'];
     final counts = <String, int>{};

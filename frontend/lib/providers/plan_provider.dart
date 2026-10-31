@@ -792,6 +792,33 @@ class PlanProvider extends ChangeNotifier {
     }
   }
 
+  /// Replaces the counts for one activity from a plan-room reaction event.
+  /// Does not reload the itinerary. Highlight changes only when [userId] is
+  /// [currentUserId].
+  void applyRemoteReaction({
+    required String activityId,
+    required Map<String, int> counts,
+    required String type,
+    required String userId,
+    required bool? voted,
+    String? currentUserId,
+  }) {
+    final id = activityId.trim();
+    if (id.isEmpty) return;
+    final current = _activityReactions[id] ?? ActivityReactions.empty;
+    _activityReactions = {
+      ..._activityReactions,
+      id: current.applyLive(
+        counts: counts,
+        type: type,
+        actorId: userId,
+        currentUserId: currentUserId,
+        voted: voted,
+      ),
+    };
+    notifyListeners();
+  }
+
   /// Counts and this person's votes. Empty until the itinerary has loaded them.
   ActivityReactions reactionsFor(String? activityId) {
     final id = activityId?.trim() ?? '';

@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
+import '../models/activity_reaction.dart';
+
 class PlanViewer {
   final String userId;
   final String name;
@@ -56,11 +58,68 @@ List<PlanViewer>? parsePlanViewers(dynamic data) {
   return rows;
 }
 
+class PlanReactionEvent {
+  final String activityId;
+  final String planId;
+  final String type;
+  final String userId;
+  final bool? voted;
+  final Map<String, int> counts;
+
+  const PlanReactionEvent({
+    required this.activityId,
+    required this.planId,
+    required this.type,
+    required this.userId,
+    required this.voted,
+    required this.counts,
+  });
+}
+
+/// Null when the payload is not a reaction for one activity.
+PlanReactionEvent? parsePlanReaction(dynamic data) {
+  Map? body;
+  if (data is Map) {
+    body = data;
+  } else if (data is String) {
+    try {
+      final decoded = json.decode(data);
+      if (decoded is Map) body = decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+  if (body == null) return null;
+  final activityId = body['activityId']?.toString().trim() ?? '';
+  final type = body['type']?.toString().trim() ?? '';
+  final rawCounts = body['counts'];
+  if (activityId.isEmpty ||
+      !ActivityReactions.types.contains(type) ||
+      rawCounts is! Map) {
+    return null;
+  }
+  final counts = <String, int>{};
+  for (final name in ActivityReactions.types) {
+    final value = rawCounts[name];
+    counts[name] = value is num ? value.round() : 0;
+  }
+  final voted = body['voted'];
+  return PlanReactionEvent(
+    activityId: activityId,
+    planId: body['planId']?.toString().trim() ?? '',
+    type: type,
+    userId: body['userId']?.toString().trim() ?? '',
+    voted: voted is bool ? voted : null,
+    counts: counts,
+  );
+}
+
 /// One socket for the open plan. Errors stay quiet when the network blocks sockets.
 class PlanPresenceConnection {
-  PlanPresenceConnection({required this.onUsers});
+  PlanPresenceConnection({required this.onUsers, this.onReaction});
 
   final void Function(List<PlanViewer> users) onUsers;
+  final void Function(PlanReactionEvent event)? onReaction;
 
   io.Socket? _socket;
   String? _planId;
@@ -104,6 +163,22 @@ class PlanPresenceConnection {
           final users = parsePlanViewers(data);
           if (users == null) return;
           onUsers(users);
+        } catch (_) {}
+      });
+      socket.on('reaction', (data) {
+        if (_closed) return;
+        final handler = onReaction;
+        if (handler == null) return;
+        try {
+          final event = parsePlanReaction(data);
+          if (event == null) return;
+          final openPlan = _planId;
+          if (event.planId.isNotEmpty &&
+              openPlan != null &&
+              event.planId != openPlan) {
+            return;
+          }
+          handler(event);
         } catch (_) {}
       });
       socket.onConnectError((_) {});

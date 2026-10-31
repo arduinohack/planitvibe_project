@@ -1288,6 +1288,17 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         if (!mounted) return;
         setState(() => _viewers = users);
       },
+      onReaction: (event) {
+        if (!mounted) return;
+        Provider.of<PlanProvider>(context, listen: false).applyRemoteReaction(
+          activityId: event.activityId,
+          counts: event.counts,
+          type: event.type,
+          userId: event.userId,
+          voted: event.voted,
+          currentUserId: _selfId,
+        );
+      },
     );
     _presence = connection;
     connection.connect(
