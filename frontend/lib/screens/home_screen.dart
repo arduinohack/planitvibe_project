@@ -9,7 +9,6 @@ import '../utils/verify_email.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart'; // For role and logout
 import 'ai_settings_screen.dart';
-import 'coordinator_dashboard_screen.dart'; // For coordinators
 import 'invitations_screen.dart';
 import 'plan_detail_screen.dart';
 import 'user_profile_screen.dart'; // For profile
@@ -133,20 +132,6 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          if (Provider.of<UserProvider>(context).currentUserRole ==
-              UserRole.vibeCoordinator)
-            IconButton(
-              icon: const Icon(Icons.dashboard),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const CoordinatorDashboardScreen(),
-                  ),
-                );
-              },
-              tooltip: 'Coordinator dashboard',
-            ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
