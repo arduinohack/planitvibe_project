@@ -22,6 +22,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _length = TextEditingController();
   final _tag = TextEditingController();
   var _loading = true;
+  var _paid = false;
   String? _error;
   List<PublishedTemplateCard> _templates = const [];
   List<PublishedTemplateCard> _mine = const [];
@@ -76,7 +77,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
     LibraryResult? owned;
+    var paid = false;
     if ((userProvider.token ?? '').isNotEmpty) {
+      await userProvider.loadPlanAccess();
+      if (!mounted) return;
+      paid = userProvider.planAccess?.plusActive == true;
       owned = await planProvider.fetchOwnedPublishedTemplates(userProvider.token);
       if (!mounted) return;
       if (owned.status == 401) {
@@ -86,6 +91,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
     setState(() {
       _loading = false;
+      _paid = paid;
       _templates = browsed.templates;
       _mine = owned == null || owned.status != 200 ? const [] : owned.templates;
       _error = null;
@@ -149,6 +155,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (!_loading && !_paid)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Subscribe to copy templates and see full reviews.',
+              ),
+            ),
           TextField(
             controller: _query,
             decoration: const InputDecoration(labelText: 'Search'),
@@ -199,7 +212,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 title: Text(card.title),
                 subtitle: Text(
                   '${card.city} · ${card.tripLength} days · ${card.vibe}\n'
-                  'By ${card.creatorName} · ${card.copyCount} copies',
+                  '${libraryStatLine(card)}',
                 ),
                 isThreeLine: true,
                 onTap: () => _open(card),
@@ -249,8 +262,11 @@ class PublishedTemplateScreen extends StatefulWidget {
 
 class _PublishedTemplateScreenState extends State<PublishedTemplateScreen> {
   var _loading = true;
+  var _paid = false;
   String? _error;
+  String? _reviewError;
   PublishedTemplateCard? _template;
+  List<TemplateReview> _reviews = const [];
 
   @override
   void initState() {
@@ -272,24 +288,56 @@ class _PublishedTemplateScreenState extends State<PublishedTemplateScreen> {
   }
 
   Future<void> _load() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     setState(() {
       _loading = true;
       _error = null;
+      _reviewError = null;
     });
-    final result = await planProvider.readPublishedTemplate(widget.templateId);
+    if ((userProvider.token ?? '').isNotEmpty) {
+      await userProvider.loadPlanAccess();
+      if (!mounted) return;
+    }
+    final paid = userProvider.planAccess?.plusActive == true;
+    final result = await planProvider.readPublishedTemplate(
+      widget.templateId,
+      token: userProvider.token,
+    );
     if (!mounted) return;
     final template = result.template;
     if (result.status != 200 || template == null) {
       setState(() {
         _loading = false;
+        _paid = paid;
         _error = result.error ?? 'Could not load this template';
       });
       return;
     }
+    List<TemplateReview> reviews = const [];
+    String? reviewError;
+    if (paid) {
+      final feedback = await planProvider.fetchTemplateReviews(
+        templateId: widget.templateId,
+        token: userProvider.token,
+      );
+      if (!mounted) return;
+      if (feedback.status == 401) {
+        await _endSession();
+        return;
+      }
+      if (feedback.status != 200) {
+        reviewError = feedback.error ?? 'Could not load reviews';
+      } else {
+        reviews = feedback.reviews;
+      }
+    }
     setState(() {
       _loading = false;
+      _paid = paid;
       _template = template;
+      _reviews = reviews;
+      _reviewError = reviewError;
     });
   }
 
@@ -388,8 +436,22 @@ class _PublishedTemplateScreenState extends State<PublishedTemplateScreen> {
                     Text(
                       '${template.city} · ${template.tripLength} days · ${template.vibe}',
                     ),
-                    Text('By ${template.creatorName}'),
-                    Text('${template.copyCount} copies · ${template.viewCount} views'),
+                    Text(libraryStatLine(template)),
+                    const SizedBox(height: 8),
+                    if (_paid) ...[
+                      const Text('Reviews', style: TextStyle(fontSize: 18)),
+                      if (_reviewError != null)
+                        Text(_reviewError!, style: const TextStyle(color: Colors.red)),
+                      if (_reviewError == null && _reviews.isEmpty)
+                        const Text('No reviews yet'),
+                      for (final review in _reviews) ...[
+                        Text('${review.rating} stars'),
+                        if (review.comment.trim().isNotEmpty) Text(review.comment),
+                      ],
+                    ] else
+                      const Text(
+                        'Subscribe to copy templates and see full reviews.',
+                      ),
                     if (template.sharePath.isNotEmpty)
                       Text('https://planitvibe.com${template.sharePath}'),
                     const SizedBox(height: 12),

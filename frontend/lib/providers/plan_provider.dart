@@ -1689,15 +1689,61 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// GET /api/public/templates/:id. Counts a view.
-  Future<LibraryResult> readPublishedTemplate(String templateId) async {
+  /// A signed-in token lets the caller open a template the public list hides.
+  Future<LibraryResult> readPublishedTemplate(
+    String templateId, {
+    String? token,
+  }) async {
     try {
+      final headers = <String, String>{};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
       final response = await http.get(
         Uri.parse('$backendBaseUrl$apiPublicTemplates/$templateId'),
+        headers: headers,
       );
       return _libraryResponse(response);
     } catch (e) {
       logger.e('Error reading a published template: $e');
       return const LibraryResult(error: 'Could not load this template');
+    }
+  }
+
+  /// GET /api/published-templates/:id/feedback. Paid tiers only.
+  Future<TemplateReviewResult> fetchTemplateReviews({
+    required String templateId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const TemplateReviewResult(status: 401);
+      }
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates/$templateId/feedback'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) {
+        return TemplateReviewResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      final data = json.decode(response.body);
+      final rows = data is Map ? data['feedback'] : null;
+      return TemplateReviewResult(
+        status: 200,
+        reviews: rows is List
+            ? [
+                for (final row in rows)
+                  if (row is Map)
+                    TemplateReview.fromJson(Map<String, dynamic>.from(row)),
+              ]
+            : const [],
+      );
+    } catch (e) {
+      logger.e('Error loading template reviews: $e');
+      return const TemplateReviewResult(error: 'Could not load reviews');
     }
   }
 
