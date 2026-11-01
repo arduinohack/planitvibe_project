@@ -192,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context) => const [
               PopupMenuItem<String>(
                 value: 'ai-settings',
-                child: Text('AI settings'),
+                child: Text('Subscription and AI Settings'),
               ),
               PopupMenuItem<String>(value: 'logout', child: Text('Log out')),
             ],

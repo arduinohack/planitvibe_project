@@ -65,3 +65,10 @@ List<String> upgradeTiersAbove(String? tier) {
   if (start >= membershipTierOrder.length) return const <String>[];
   return membershipTierOrder.sublist(start);
 }
+
+/// Paid tiers below [tier], lowest first. Trial is not a checkout pack.
+List<String> downgradeTiersBelow(String? tier) {
+  final index = membershipTierOrder.indexOf((tier ?? '').trim());
+  if (index <= 1) return const <String>[];
+  return membershipTierOrder.sublist(1, index);
+}

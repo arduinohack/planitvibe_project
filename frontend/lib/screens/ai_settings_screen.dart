@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +14,41 @@ import '../providers/user_provider.dart';
 String creditBalanceText(num value) {
   if (value == value.roundToDouble()) return value.toInt().toString();
   return value.toStringAsFixed(1);
+}
+
+/// Calendar date for a subscription instant. Blank or unreadable stays an em dash.
+String subscriptionDateText(String? iso) {
+  final text = iso?.trim() ?? '';
+  if (text.isEmpty) return '—';
+  final parsed = DateTime.tryParse(text);
+  if (parsed == null) return '—';
+  return DateFormat.yMMMd().format(parsed.toLocal());
+}
+
+String subscribedLine({required String tier, String? subscribedAt}) {
+  if (tier == tierTrial) return 'Date subscribed: —';
+  return 'Date subscribed: ${subscriptionDateText(subscribedAt)}';
+}
+
+String subscriptionPeriodLine({
+  required String tier,
+  String? trialEndsAt,
+  String? currentPeriodEnd,
+  String? expiredAt,
+}) {
+  if ((expiredAt ?? '').trim().isNotEmpty) {
+    return 'Expired on ${subscriptionDateText(expiredAt)}';
+  }
+  if (tier == tierTrial) {
+    return 'Trial ends: ${subscriptionDateText(trialEndsAt)}';
+  }
+  return 'Current period ends: ${subscriptionDateText(currentPeriodEnd)}';
+}
+
+String? _dateField(Map body, String key) {
+  final value = body[key];
+  if (value is! String || value.trim().isEmpty) return null;
+  return value.trim();
 }
 
 const _providerValues = <String>[
@@ -73,6 +109,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   String _tierName = tierTrialName;
   int _planCap = 2;
   int? _plansOwned;
+  String? _subscribedAt;
+  String? _currentPeriodEnd;
+  String? _expiredAt;
+  String? _trialEndsAt;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -104,6 +144,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     String? tierName,
     int? planCap,
     int? plansOwned,
+    String? subscribedAt,
+    String? currentPeriodEnd,
+    String? expiredAt,
+    String? trialEndsAt,
   }) {
     _keyController.clear();
     setState(() {
@@ -116,6 +160,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
           : tierName.trim();
       _planCap = planCap ?? planCapForTier(tier);
       _plansOwned = plansOwned;
+      _subscribedAt = subscribedAt;
+      _currentPeriodEnd = currentPeriodEnd;
+      _expiredAt = expiredAt;
+      _trialEndsAt = trialEndsAt;
       _provider = provider;
       _formGeneration += 1;
       _error = null;
@@ -182,6 +230,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       final rawName = creditBody is Map ? creditBody['tierName'] : null;
       final rawCap = creditBody is Map ? creditBody['planCap'] : null;
       final rawOwned = creditBody is Map ? creditBody['plansOwned'] : null;
+      final creditsMap = creditBody is Map ? creditBody : const <String, dynamic>{};
       _applyStatus(
         _knownProvider(data['aiProvider']),
         data['hasKey'] as bool,
@@ -190,6 +239,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         tierName: rawName is String ? rawName : null,
         planCap: rawCap is num ? rawCap.round() : null,
         plansOwned: rawOwned is num ? rawOwned.round() : null,
+        subscribedAt: _dateField(creditsMap, 'subscribedAt'),
+        currentPeriodEnd: _dateField(creditsMap, 'currentPeriodEnd'),
+        expiredAt: _dateField(creditsMap, 'expiredAt'),
+        trialEndsAt: _dateField(creditsMap, 'trialEndsAt'),
       );
     } catch (_) {
       if (!mounted) return;
@@ -314,7 +367,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AI settings')),
+      appBar: AppBar(title: const Text('Subscription and AI Settings')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -329,6 +382,17 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   const SizedBox(height: 8),
                   Text(_tierName),
                   const SizedBox(height: 8),
+                  Text(subscribedLine(tier: _tier, subscribedAt: _subscribedAt)),
+                  const SizedBox(height: 8),
+                  Text(
+                    subscriptionPeriodLine(
+                      tier: _tier,
+                      trialEndsAt: _trialEndsAt,
+                      currentPeriodEnd: _currentPeriodEnd,
+                      expiredAt: _expiredAt,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Text('Plan cap: $_planCap'),
                   if (_plansOwned != null) ...[
                     const SizedBox(height: 8),
@@ -337,7 +401,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _credits == null
-                        ? 'AI credits'
+                        ? 'AI credits: —'
                         : 'AI credits: ${_creditText(_credits!)}',
                   ),
                   const SizedBox(height: 8),
@@ -345,14 +409,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                     spacing: 12,
                     runSpacing: 8,
                     children: [
-                      OutlinedButton(
-                        onPressed: _busy ? null : () => _buy('100'),
-                        child: const Text('Buy 100 credits'),
-                      ),
-                      OutlinedButton(
-                        onPressed: _busy ? null : () => _buy('500'),
-                        child: const Text('Buy 500 credits'),
-                      ),
                       for (final tierId in upgradeTiersAbove(_tier))
                         OutlinedButton(
                           onPressed: _busy
@@ -362,6 +418,23 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                             'Upgrade to ${tierDisplayName(tierId)}',
                           ),
                         ),
+                      for (final tierId in downgradeTiersBelow(_tier))
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _buy(checkoutPackForTier(tierId)!),
+                          child: Text(
+                            'Downgrade to ${tierDisplayName(tierId)}',
+                          ),
+                        ),
+                      OutlinedButton(
+                        onPressed: _busy ? null : () => _buy('100'),
+                        child: const Text('Buy 100 credits'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _busy ? null : () => _buy('500'),
+                        child: const Text('Buy 500 credits'),
+                      ),
                       TextButton(
                         onPressed: _busy ? null : _load,
                         child: const Text('Refresh'),
