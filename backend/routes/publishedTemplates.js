@@ -5,6 +5,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const User = require('../models/User');
 const PublishedTemplate = require('../models/PublishedTemplate');
+const TemplateFeedback = require('../models/TemplateFeedback');
 const TemplateReport = require('../models/TemplateReport');
 const { Event } = require('../models/Event');
 const authMiddleware = require('../middleware/auth.js');
@@ -90,6 +91,70 @@ function utcDayStart(now) {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+const MIN_PUBLIC_RATING = 3.5;
+const NOT_LISTED_MESSAGE = 'This template is not currently listed.';
+
+function listedRatingClause() {
+  return {
+    $or: [
+      { feedbackCount: { $in: [0, null] } },
+      { feedbackCount: { $exists: false } },
+      { averageRating: { $gte: MIN_PUBLIC_RATING } },
+    ],
+  };
+}
+
+function isPubliclyListed(doc) {
+  const count = Number(doc && doc.feedbackCount) || 0;
+  if (count <= 0) return true;
+  return Number(doc.averageRating) >= MIN_PUBLIC_RATING;
+}
+
+async function refreshTemplateRating(templateId) {
+  const rows = await TemplateFeedback.find({ templateId }).select('rating').lean();
+  const feedbackCount = rows.length;
+  const averageRating = feedbackCount
+    ? Math.round((rows.reduce((sum, row) => sum + Number(row.rating), 0) / feedbackCount) * 100) / 100
+    : 0;
+  await PublishedTemplate.updateOne(
+    { _id: templateId },
+    { $set: { averageRating, feedbackCount } },
+  );
+  return { averageRating, feedbackCount };
+}
+
+function readFeedbackRating(body) {
+  const raw = body && body.rating;
+  const value = typeof raw === 'number'
+    ? raw
+    : typeof raw === 'string' && /^\d+$/.test(raw.trim())
+      ? Number(raw.trim())
+      : NaN;
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    return { error: 'Rating must be a whole number from 1 to 5.' };
+  }
+  return { rating: value };
+}
+
+function readFeedbackComment(body) {
+  if (!body || body.comment == null || body.comment === '') return { comment: '' };
+  if (typeof body.comment !== 'string') return { error: 'Comment must be text.' };
+  const comment = body.comment.trim();
+  if (comment.length > 500) return { error: 'Comment is too long.' };
+  return { comment };
+}
+
+async function paidReviewGate(callerId) {
+  const user = await User.findById(callerId).select('tier plusActive').lean();
+  if (resolveTier(user) === 'trial') {
+    return {
+      status: 402,
+      body: { message: 'Subscribe to copy templates and see full reviews.' },
+    };
+  }
+  return { status: 200 };
+}
+
 async function optionalUser(req) {
   const header = req.header('Authorization') || '';
   const token = header.replace(/^Bearer\s+/i, '').trim();
@@ -128,7 +193,12 @@ function applyDraft(doc, plan, fields, draft) {
 }
 
 // GET /api/public/templates?q=&city=&length=&tag=
-publicRouter.get('/', async (req, res) => {
+// Logged-out GET /api/published-templates uses this same handler.
+// A signed-in GET /api/published-templates is the owner's own list.
+publicRouter.get('/', async (req, res, next) => {
+  if (req.baseUrl === '/api/published-templates' && req.header('Authorization')) {
+    return next('router');
+  }
   try {
     const filter = { published: true };
     const city = typeof req.query.city === 'string' ? req.query.city.trim() : '';
@@ -157,6 +227,8 @@ publicRouter.get('/', async (req, res) => {
         filter.$or = text;
       }
     }
+    if (!filter.$and) filter.$and = [];
+    filter.$and.push(listedRatingClause());
     const rows = await PublishedTemplate.find(filter)
       .sort({ copyCount: -1, viewCount: -1, createdAt: -1 })
       .limit(50)
@@ -170,14 +242,18 @@ publicRouter.get('/', async (req, res) => {
 });
 
 // GET /api/public/templates/:id
+// A template under 3.5 is 404 for a logged-out caller. A signed-in caller can open it.
 publicRouter.get('/:id', async (req, res) => {
   try {
-    const doc = await PublishedTemplate.findOneAndUpdate(
-      { _id: String(req.params.id || ''), published: true },
-      { $inc: { viewCount: 1 } },
-      { new: true },
-    ).lean();
+    const templateId = String(req.params.id || '');
+    const doc = await PublishedTemplate.findOne({ _id: templateId, published: true }).lean();
     if (!doc) return res.status(404).json({ message: 'Template not found' });
+    if (!isPubliclyListed(doc)) {
+      const viewer = await optionalUser(req);
+      if (!viewer) return res.status(404).json({ message: NOT_LISTED_MESSAGE });
+    }
+    await PublishedTemplate.updateOne({ _id: templateId }, { $inc: { viewCount: 1 } });
+    doc.viewCount = (doc.viewCount || 0) + 1;
     return res.json({
       template: {
         ...publicCard(doc),
@@ -435,6 +511,74 @@ ownerRouter.post('/:id/unpublish', async (req, res) => {
     return res.json({ template: ownerCard(doc) });
   } catch (err) {
     console.error('Unpublish template error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/published-templates/:id/feedback
+ownerRouter.get('/:id/feedback', async (req, res) => {
+  try {
+    const callerId = callerIdOf(req);
+    const gate = await paidReviewGate(callerId);
+    if (gate.status !== 200) return res.status(gate.status).json(gate.body);
+    const templateId = String(req.params.id || '');
+    const doc = await PublishedTemplate.findOne({ _id: templateId, published: true })
+      .select('_id')
+      .lean();
+    if (!doc) return res.status(404).json({ message: 'Template not found' });
+    const rows = await TemplateFeedback.find({ templateId })
+      .sort({ createdAt: -1 })
+      .select('rating comment createdAt')
+      .lean();
+    return res.json({
+      feedback: rows.map((row) => ({
+        rating: row.rating,
+        comment: row.comment || '',
+        createdAt: row.createdAt,
+      })),
+    });
+  } catch (err) {
+    console.error('List template feedback error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/published-templates/:id/feedback { rating, comment? }
+ownerRouter.post('/:id/feedback', async (req, res) => {
+  const templateId = String(req.params.id || '');
+  try {
+    const callerId = String(callerIdOf(req));
+    const doc = await PublishedTemplate.findOne({ _id: templateId, published: true })
+      .select('_id')
+      .lean();
+    if (!doc) return res.status(404).json({ message: 'Template not found' });
+    const copied = await Plan.findOne({
+      ownerId: callerId,
+      basedOnTemplateId: templateId,
+    }).select('_id').lean();
+    if (!copied) {
+      return res.status(403).json({ message: 'Copy this template before rating it.' });
+    }
+    const rating = readFeedbackRating(req.body);
+    if (rating.error) return res.status(400).json({ message: rating.error });
+    const comment = readFeedbackComment(req.body);
+    if (comment.error) return res.status(400).json({ message: comment.error });
+    await TemplateFeedback.updateOne(
+      { templateId, userId: callerId },
+      {
+        $set: { rating: rating.rating, comment: comment.comment },
+        $setOnInsert: { _id: uuidv4() },
+      },
+      { upsert: true, setDefaultsOnInsert: false },
+    );
+    const summary = await refreshTemplateRating(templateId);
+    return res.json({
+      feedback: { rating: rating.rating, comment: comment.comment },
+      averageRating: summary.averageRating,
+      feedbackCount: summary.feedbackCount,
+    });
+  } catch (err) {
+    console.error('Save template feedback error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });

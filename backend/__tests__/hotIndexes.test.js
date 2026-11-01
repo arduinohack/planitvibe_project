@@ -35,6 +35,7 @@ test('hot query indexes are created and the unused ones are skipped', async () =
     'Attachment { activityId: 1, createdAt: 1 }',
     'AiUsage { userId: 1, createdAt: -1 }',
     'ActivityReaction { activityId: 1, userId: 1, type: 1 } unique',
+    'TemplateFeedback { templateId: 1, userId: 1 } unique',
   ]);
   expect(report.skipped).toEqual([
     'PlanUser { planId: 1, status: 1 }: PlanUser has no status field',

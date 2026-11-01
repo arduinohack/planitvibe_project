@@ -20,6 +20,8 @@ const publishedTemplateSchema = new mongoose.Schema({
   activities: { type: mongoose.Schema.Types.Mixed, default: [] },
   copyCount: { type: Number, default: 0 },
   viewCount: { type: Number, default: 0 },
+  averageRating: { type: Number, default: 0 },
+  feedbackCount: { type: Number, default: 0 },
 }, {
   timestamps: true,
   collection: 'publishedTemplates',

@@ -380,17 +380,21 @@ function shareDraft(plan, activities, fields, creatorName) {
 }
 
 function publicCard(doc) {
+  const feedbackCount = Number(doc.feedbackCount) || 0;
+  const average = Number(doc.averageRating);
   return {
     id: String(doc._id),
+    name: doc.title,
     title: doc.title,
     description: doc.description || '',
     city: doc.city || '',
     tripLength: doc.tripLength,
     vibe: doc.vibe || '',
     coverImage: doc.coverImage || '',
-    creatorName: doc.creatorName || 'A PlanItVibe member',
     copyCount: doc.copyCount || 0,
     viewCount: doc.viewCount || 0,
+    averageRating: feedbackCount > 0 && Number.isFinite(average) ? average : 0,
+    feedbackCount,
     sharePath: `/template.html?id=${encodeURIComponent(String(doc._id))}`,
   };
 }
@@ -398,6 +402,7 @@ function publicCard(doc) {
 function ownerCard(doc) {
   return {
     ...publicCard(doc),
+    creatorName: doc.creatorName || 'A PlanItVibe member',
     published: doc.published !== false,
     sourcePlanId: doc.sourcePlanId || '',
   };

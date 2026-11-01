@@ -77,6 +77,9 @@ app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 app.use('/api/templates', authMiddleware, require('./routes/templates'));
 const { publicRouter, ownerRouter } = require('./routes/publishedTemplates');
 app.use('/api/public/templates', publicRouter);
+// Logged-out GET / and GET /:id are the public gallery. A signed-in GET /
+// falls through to the owner list. Feedback stays on the owner router.
+app.use('/api/published-templates', publicRouter);
 app.use('/api/published-templates', authMiddleware, ownerRouter);
 
 // Activity API. The handlers live at /api/activities. /api/events is not mounted.

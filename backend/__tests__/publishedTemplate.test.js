@@ -15,6 +15,7 @@ const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
 const PublishedTemplate = require('../models/PublishedTemplate');
+const TemplateFeedback = require('../models/TemplateFeedback');
 const TemplateReport = require('../models/TemplateReport');
 const SupportLog = require('../models/SupportLog');
 const { sendEmail } = require('../utils/email/sendEmail');
@@ -90,6 +91,7 @@ afterEach(async () => {
     Invitation.deleteMany({}),
     Event.deleteMany({}),
     PublishedTemplate.deleteMany({}),
+    TemplateFeedback.deleteMany({}),
     TemplateReport.deleteMany({}),
     SupportLog.deleteMany({}),
   ]);
@@ -479,5 +481,135 @@ describe('published templates', () => {
     const quiet = await sendOpenReportDigest(nextDay);
     expect(quiet.sent).toBe(false);
     expect(quiet.open).toBe(0);
+  });
+
+  test('the public gallery keeps 3.5 and unrated templates and hides a lower average', async () => {
+    const ada = await registerAndLogin('ada-rating@example.com', 'Ada');
+    await setTier(ada.userId, 'plus');
+    const highPlan = await createPlan(ada.token, 'High');
+    const freshPlan = await createPlan(ada.token, 'Fresh');
+    const lowPlan = await createPlan(ada.token, 'Low');
+    const high = await request(app)
+      .post(`/api/published-templates/from/${highPlan}`)
+      .set(bearer(ada.token))
+      .send({ ...publishBody('High days'), title: 'High days' });
+    const fresh = await request(app)
+      .post(`/api/published-templates/from/${freshPlan}`)
+      .set(bearer(ada.token))
+      .send({ ...publishBody('Fresh days'), title: 'Fresh days' });
+    const low = await request(app)
+      .post(`/api/published-templates/from/${lowPlan}`)
+      .set(bearer(ada.token))
+      .send({ ...publishBody('Low days'), title: 'Low days' });
+    expect(high.status).toBe(201);
+    expect(fresh.status).toBe(201);
+    expect(low.status).toBe(201);
+    await PublishedTemplate.updateOne(
+      { _id: high.body.template.id },
+      { $set: { averageRating: 3.5, feedbackCount: 2 } },
+    );
+    await PublishedTemplate.updateOne(
+      { _id: low.body.template.id },
+      { $set: { averageRating: 3.4, feedbackCount: 2 } },
+    );
+    await TemplateFeedback.create({
+      _id: 'fb-low',
+      templateId: low.body.template.id,
+      userId: 'someone-else',
+      rating: 2,
+      comment: 'Too rushed',
+    });
+
+    async function titles(path) {
+      const listed = await request(app).get(path);
+      expect(listed.status).toBe(200);
+      expect(listed.body.templates.every((row) => row.creatorName == null)).toBe(true);
+      return listed.body.templates.map((row) => row.title).sort();
+    }
+    expect(await titles('/api/public/templates')).toEqual(['Fresh days', 'High days']);
+    expect(await titles('/api/published-templates')).toEqual(['Fresh days', 'High days']);
+    const highRow = (await request(app).get('/api/public/templates')).body.templates
+      .find((row) => row.title === 'High days');
+    expect(highRow.name).toBe('High days');
+    expect(highRow.averageRating).toBe(3.5);
+    expect(highRow.feedbackCount).toBe(2);
+    expect(highRow.copyCount).toBe(0);
+
+    const mine = await request(app)
+      .get('/api/published-templates')
+      .set(bearer(ada.token));
+    expect(mine.status).toBe(200);
+    expect(mine.body.templates.map((row) => row.title).sort()).toEqual([
+      'Fresh days',
+      'High days',
+      'Low days',
+    ]);
+
+    const hidden = await request(app).get(`/api/published-templates/${low.body.template.id}`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.body.message).toBe('This template is not currently listed.');
+    const hiddenPublic = await request(app).get(`/api/public/templates/${low.body.template.id}`);
+    expect(hiddenPublic.status).toBe(404);
+    expect(hiddenPublic.body.message).toBe('This template is not currently listed.');
+
+    const grace = await registerAndLogin('grace-rating@example.com', 'Grace');
+    const opened = await request(app)
+      .get(`/api/public/templates/${low.body.template.id}`)
+      .set(bearer(grace.token));
+    expect(opened.status).toBe(200);
+    expect(opened.body.template.creatorName).toBeUndefined();
+    expect(opened.body.template.name).toBe('Low days');
+
+    const deniedReviews = await request(app)
+      .get(`/api/published-templates/${low.body.template.id}/feedback`)
+      .set(bearer(grace.token));
+    expect(deniedReviews.status).toBe(402);
+
+    await setTier(grace.userId, 'plus');
+    const reviews = await request(app)
+      .get(`/api/published-templates/${low.body.template.id}/feedback`)
+      .set(bearer(grace.token));
+    expect(reviews.status).toBe(200);
+    expect(reviews.body.feedback).toEqual([
+      expect.objectContaining({ rating: 2, comment: 'Too rushed' }),
+    ]);
+    expect(JSON.stringify(reviews.body)).not.toContain('Ada');
+    expect(JSON.stringify(reviews.body)).not.toContain('Lovelace');
+
+    const notCopied = await request(app)
+      .post(`/api/published-templates/${low.body.template.id}/feedback`)
+      .set(bearer(grace.token))
+      .send({ rating: 5, comment: 'Nice' });
+    expect(notCopied.status).toBe(403);
+    expect(notCopied.body.message).toBe('Copy this template before rating it.');
+
+    const copied = await request(app)
+      .post(`/api/public/templates/${fresh.body.template.id}/copy`)
+      .set(bearer(grace.token))
+      .send({ name: 'Mine', startDate: '2031-02-01' });
+    expect(copied.status).toBe(201);
+    const counted = await PublishedTemplate.findById(fresh.body.template.id).lean();
+    expect(counted.copyCount).toBe(1);
+
+    const first = await request(app)
+      .post(`/api/published-templates/${fresh.body.template.id}/feedback`)
+      .set(bearer(grace.token))
+      .send({ rating: 4, comment: 'Clear' });
+    expect(first.status).toBe(200);
+    expect(first.body.averageRating).toBe(4);
+    expect(first.body.feedbackCount).toBe(1);
+    const second = await request(app)
+      .post(`/api/published-templates/${fresh.body.template.id}/feedback`)
+      .set(bearer(grace.token))
+      .send({ rating: 2, comment: 'Changed my mind' });
+    expect(second.status).toBe(200);
+    expect(second.body.averageRating).toBe(2);
+    expect(second.body.feedbackCount).toBe(1);
+    expect(await TemplateFeedback.countDocuments({
+      templateId: fresh.body.template.id,
+    })).toBe(1);
+
+    const after = await request(app).get('/api/public/templates');
+    expect(after.body.templates.map((row) => row.title)).toEqual(['High days']);
   });
 });

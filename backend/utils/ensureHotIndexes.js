@@ -7,6 +7,7 @@ const { Event } = require('../models/Event');
 const Attachment = require('../models/Attachment');
 const AiUsage = require('../models/AiUsage');
 const ActivityReaction = require('../models/ActivityReaction');
+const TemplateFeedback = require('../models/TemplateFeedback');
 
 // Idempotent. Safe on every startup. Does not change queries.
 async function ensureHotIndexes() {
@@ -19,6 +20,10 @@ async function ensureHotIndexes() {
     { activityId: 1, userId: 1, type: 1 },
     { unique: true },
   );
+  await TemplateFeedback.collection.createIndex(
+    { templateId: 1, userId: 1 },
+    { unique: true },
+  );
 
   const report = {
     ensured: [
@@ -27,6 +32,7 @@ async function ensureHotIndexes() {
       'Attachment { activityId: 1, createdAt: 1 }',
       'AiUsage { userId: 1, createdAt: -1 }',
       'ActivityReaction { activityId: 1, userId: 1, type: 1 } unique',
+      'TemplateFeedback { templateId: 1, userId: 1 } unique',
     ],
     skipped: [
       'PlanUser { planId: 1, status: 1 }: PlanUser has no status field',
