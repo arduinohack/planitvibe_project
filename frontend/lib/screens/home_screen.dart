@@ -332,26 +332,52 @@ class _HomeScreenState extends State<HomeScreen> {
       latestEnd: plan.latestEnd,
       planTimeZone: plan.timeZone,
     );
+    final owner = storedRole?.trim() == 'Owner';
     return Card(
-      child: ListTile(
-        title: Text(plan.name),
-        subtitle: Text(
-          [
-            'Type: ${plan.type}',
-            if (roleText != null) 'Role: $roleText',
-            'Destination: ${plan.destination}',
-            'Budget: ${formatPlanBudget(plan.budget)}',
-            if (dateLine != null) dateLine,
-          ].join('\n'),
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PlanDetailScreen(plan: plan),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(plan.name),
+            subtitle: Text(
+              [
+                'Type: ${plan.type}',
+                if (roleText != null) 'Role: $roleText',
+                'Destination: ${plan.destination}',
+                'Budget: ${formatPlanBudget(plan.budget)}',
+                if (dateLine != null) dateLine,
+              ].join('\n'),
             ),
-          );
-        },
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PlanDetailScreen(plan: plan),
+                ),
+              );
+            },
+          ),
+          if (owner)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                children: [
+                  TextButton(
+                    onPressed: () => _copyPlan(plan),
+                    child: const Text('Copy'),
+                  ),
+                  TextButton(
+                    onPressed: () => _saveAsTemplate(plan),
+                    child: const Text('Save as template'),
+                  ),
+                  TextButton(
+                    onPressed: () => _archivePlan(plan),
+                    child: const Text('Archive'),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -436,6 +462,195 @@ class _HomeScreenState extends State<HomeScreen> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(planProvider.writeMessage ?? 'Could not recall this plan'),
+      ),
+    );
+  }
+
+  Future<void> _archivePlan(Plan plan) async {
+    final descriptionController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Archive ${plan.name}?'),
+        content: TextField(
+          controller: descriptionController,
+          maxLength: 500,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Description'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+    final description = descriptionController.text.trim();
+    descriptionController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final status = await planProvider.archivePlan(
+      planId: plan.id,
+      description: description,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 200) {
+      await userProvider.loadPlanAccess();
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(planProvider.writeMessage ?? 'Could not archive this plan'),
+      ),
+    );
+  }
+
+  Future<void> _copyPlan(Plan plan) async {
+    final nameController = TextEditingController(text: 'Copy of ${plan.name}');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Copy plan'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(labelText: 'Name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+    final name = nameController.text.trim();
+    nameController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.copyPlan(
+      planId: plan.id,
+      name: name,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ?? 'Upgrade to own more plans.',
+        token: userProvider.token,
+        pack: planProvider.upgradePack ?? 'plus_monthly',
+        tierName: planProvider.upgradeTierName,
+        showUpgrade: planProvider.upgradePack != null,
+      );
+      return;
+    }
+    final created = result.plan;
+    if (result.status != 201 || created == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not copy this plan')),
+      );
+      return;
+    }
+    await userProvider.loadPlanAccess();
+    if (!mounted) return;
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (context) => PlanDetailScreen(plan: created),
+      ),
+    );
+  }
+
+  Future<void> _saveAsTemplate(Plan plan) async {
+    final nameController = TextEditingController(text: plan.name);
+    final descriptionController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Save as template'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final name = nameController.text.trim();
+    final description = descriptionController.text.trim();
+    nameController.dispose();
+    descriptionController.dispose();
+    if (confirmed != true || !mounted) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    if (name.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Name is required.')));
+      return;
+    }
+    final status = await planProvider.saveAsTemplate(
+      planId: plan.id,
+      name: name,
+      description: description,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (status == 201) {
+      messenger.showSnackBar(const SnackBar(content: Text('Saved as template')));
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(planProvider.writeMessage ?? 'Could not save this template'),
       ),
     );
   }

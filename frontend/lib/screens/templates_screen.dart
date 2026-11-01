@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/plan_template.dart';
+import '../models/published_template.dart';
 import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/plus_upgrade.dart';
 import 'login_screen.dart';
 import 'plan_detail_screen.dart';
+import 'publish_template_screen.dart';
 
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
@@ -16,6 +18,8 @@ class TemplatesScreen extends StatefulWidget {
 }
 
 class _TemplatesScreenState extends State<TemplatesScreen> {
+  List<PublishedTemplateCard> _published = const [];
+
   @override
   void initState() {
     super.initState();
@@ -27,10 +31,83 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
     final navigator = Navigator.of(context);
     final status = await planProvider.fetchTemplates(userProvider.token);
+    final owned = status == 401
+        ? null
+        : await planProvider.fetchOwnedPublishedTemplates(userProvider.token);
     if (!mounted) return;
-    if (status == 401) {
+    setState(() {
+      _published = owned != null && owned.status == 200
+          ? owned.templates
+          : const [];
+    });
+    if (status == 401 || owned?.status == 401) {
       await _endSession(userProvider, planProvider, navigator);
     }
+  }
+
+  PublishedTemplateCard? _publishedFor(PlanTemplate template) {
+    final source = template.sourcePlanId.trim();
+    if (source.isEmpty) return null;
+    for (final card in _published) {
+      if (card.sourcePlanId == source) return card;
+    }
+    return null;
+  }
+
+  Future<void> _publish(PlanTemplate template) async {
+    final planId = template.sourcePlanId.trim();
+    if (planId.isEmpty) return;
+    final existing = _publishedFor(template);
+    final city = existing != null && existing.city.trim().isNotEmpty
+        ? existing.city.trim()
+        : template.destination.trim();
+    final description = existing != null
+        ? existing.description
+        : template.description.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => PublishTemplateScreen(
+          planId: planId,
+          initialTitle: existing != null && existing.title.trim().isNotEmpty
+              ? existing.title
+              : template.name,
+          initialDescription: description,
+          initialCity: city.length <= 60 ? city : '',
+          initialTripLength: existing != null && existing.tripLength > 0
+              ? existing.tripLength
+              : template.tripLengthDays,
+          initialVibe: existing?.vibe ?? '',
+          initialCover: existing?.coverImage ?? '',
+        ),
+      ),
+    );
+    if (changed == true && mounted) await _load();
+  }
+
+  Future<void> _unpublish(PublishedTemplateCard card) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await planProvider.unpublishTemplate(
+      templateId: card.id,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (result.status == 401) {
+      await _endSession(userProvider, planProvider, navigator);
+      return;
+    }
+    if (result.status != 200) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.error ?? 'Could not unpublish this template'),
+        ),
+      );
+      return;
+    }
+    messenger.showSnackBar(const SnackBar(content: Text('Unpublished')));
+    await _load();
   }
 
   Future<void> _endSession(
@@ -127,29 +204,48 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
           return ListView(
             children: [
               for (final template in planProvider.templates)
-                Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ListTile(
-                        title: Text(template.name),
-                        subtitle: template.description.trim().isEmpty
-                            ? null
-                            : Text(template.description.trim()),
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: () => _newFromTemplate(template),
-                          child: const Text('New from template'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _templateCard(template),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _templateCard(PlanTemplate template) {
+    final published = _publishedFor(template);
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            title: Text(template.name),
+            subtitle: template.description.trim().isEmpty
+                ? null
+                : Text(template.description.trim()),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              children: [
+                TextButton(
+                  onPressed: () => _newFromTemplate(template),
+                  child: const Text('New from template'),
+                ),
+                if (template.sourcePlanId.trim().isNotEmpty)
+                  TextButton(
+                    onPressed: () => _publish(template),
+                    child: const Text('Publish'),
+                  ),
+                if (published != null && published.published)
+                  TextButton(
+                    onPressed: () => _unpublish(published),
+                    child: const Text('Unpublish'),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
