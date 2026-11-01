@@ -62,6 +62,8 @@ if (require.main === module) {
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
   });
+  const { startTemplateReportDigest } = require('./utils/templateReports');
+  startTemplateReportDigest();
 }
 
 module.exports = app;

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Templates · PlanItVibe</title>
+  <link rel="icon" href="planitvibe_logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="index.html">
+      <img src="planitvibe_logo.png" alt="" width="48" height="48">
+      <span>PlanItVibe</span>
+    </a>
+    <nav>
+      <a href="templates.html">Templates</a>
+      <a href="docs.html">Docs</a>
+      <a href="index.html#invite-request">Request an invitation</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Templates</h1>
+    <p>Browse trip plans other people published. Copy one into your own account.</p>
+    <form id="filters" class="filters">
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search">
+      <label for="city">City</label>
+      <input id="city" name="city" type="text">
+      <label for="length">Length in days</label>
+      <input id="length" name="length" type="number" min="1" max="60">
+      <label for="tag">Tag</label>
+      <input id="tag" name="tag" type="text">
+      <button type="submit">Search</button>
+    </form>
+    <section id="results"></section>
+    <p id="status" class="request-status" role="status"></p>
+  </main>
+  <script>
+    const apiBase = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      ? 'http://127.0.0.1:3000'
+      : 'https://planitvibe.com';
+    const form = document.getElementById('filters');
+    const results = document.getElementById('results');
+    const status = document.getElementById('status');
+
+    function line(parent, text) {
+      const node = document.createElement('p');
+      node.textContent = text;
+      parent.appendChild(node);
+    }
+
+    async function load(event) {
+      if (event) event.preventDefault();
+      status.textContent = '';
+      results.replaceChildren();
+      const params = new URLSearchParams(new FormData(form));
+      for (const [key, value] of [...params.entries()]) {
+        if (!String(value).trim()) params.delete(key);
+      }
+      try {
+        const response = await fetch(`${apiBase}/api/public/templates?${params.toString()}`);
+        const body = await response.json();
+        const templates = Array.isArray(body.templates) ? body.templates : [];
+        if (!templates.length) {
+          status.textContent = 'No templates yet';
+          return;
+        }
+        for (const template of templates) {
+          const card = document.createElement('a');
+          card.className = 'template-card';
+          card.href = `template.html?id=${encodeURIComponent(template.id)}`;
+          const title = document.createElement('h2');
+          title.textContent = template.title || 'Template';
+          card.appendChild(title);
+          line(card, template.description || '');
+          line(
+            card,
+            `${template.city || ''} · ${template.tripLength || ''} days · ${template.vibe || ''}`,
+          );
+          line(
+            card,
+            `By ${template.creatorName || 'A PlanItVibe member'} · ${template.copyCount || 0} copies`,
+          );
+          results.appendChild(card);
+        }
+      } catch (err) {
+        status.textContent = 'Could not load templates';
+      }
+    }
+
+    form.addEventListener('submit', load);
+    load();
+  </script>
+</body>
+</html>

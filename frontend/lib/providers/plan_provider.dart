@@ -10,6 +10,7 @@ import 'package:flutter/material.dart'; // Added: Required for Icon
 import '../models/membership_tier.dart';
 import '../models/plan.dart'; // Your Plan model
 import '../models/plan_template.dart';
+import '../models/published_template.dart';
 import '../models/plan_member.dart';
 import '../models/activity.dart';
 import '../models/activity_warning.dart';
@@ -1592,6 +1593,277 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error creating plan from template: $e');
       return const PlanLinkResult();
+    }
+  }
+
+  Map<String, String>? _upgradeFields(String body) {
+    _readUpgrade(body);
+    try {
+      final data = json.decode(body);
+      if (data is! Map) return null;
+      return {
+        'nextTier': _apiText(data, 'nextTier') ?? '',
+        'nextTierName': _apiText(data, 'nextTierName') ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<LibraryResult> _libraryGet(Uri uri, String? token) async {
+    if (token == null || token.isEmpty) return const LibraryResult(status: 401);
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _libraryResponse(response);
+  }
+
+  LibraryResult _libraryResponse(dynamic response) {
+    final status = response.statusCode as int;
+    if (status != 200 && status != 201) {
+      final upgrade = _upgradeFields(response.body as String);
+      return LibraryResult(
+        status: status,
+        error: _apiErrorMessage(response.body as String),
+        nextTier: upgrade?['nextTier'],
+        nextTierName: upgrade?['nextTierName'],
+      );
+    }
+    final data = json.decode(response.body as String);
+    if (data is! Map) return LibraryResult(status: status);
+    final rows = data['templates'];
+    final one = data['template'];
+    final preview = data['preview'];
+    PublishedPreview? shown;
+    if (preview is Map) {
+      final removed = data['removed'];
+      shown = PublishedPreview(
+        card: PublishedTemplateCard.fromJson(Map<String, dynamic>.from(preview)),
+        removed: removed is List
+            ? [for (final item in removed) item.toString()]
+            : const [],
+        blocked: (data['blocked'] ?? '').toString(),
+      );
+    }
+    return LibraryResult(
+      status: status,
+      templates: rows is List
+          ? [
+              for (final row in rows)
+                if (row is Map)
+                  PublishedTemplateCard.fromJson(Map<String, dynamic>.from(row)),
+            ]
+          : const [],
+      template: one is Map
+          ? PublishedTemplateCard.fromJson(Map<String, dynamic>.from(one))
+          : null,
+      preview: shown,
+    );
+  }
+
+  /// GET /api/public/templates. Anyone, including a signed-out caller.
+  Future<LibraryResult> browsePublishedTemplates({
+    String? query,
+    String? city,
+    String? length,
+    String? tag,
+  }) async {
+    try {
+      final params = <String, String>{
+        if ((query ?? '').trim().isNotEmpty) 'q': query!.trim(),
+        if ((city ?? '').trim().isNotEmpty) 'city': city!.trim(),
+        if ((length ?? '').trim().isNotEmpty) 'length': length!.trim(),
+        if ((tag ?? '').trim().isNotEmpty) 'tag': tag!.trim(),
+      };
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiPublicTemplates').replace(
+          queryParameters: params.isEmpty ? null : params,
+        ),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error browsing templates: $e');
+      return const LibraryResult(error: 'Could not load templates');
+    }
+  }
+
+  /// GET /api/public/templates/:id. Counts a view.
+  Future<LibraryResult> readPublishedTemplate(String templateId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl$apiPublicTemplates/$templateId'),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error reading a published template: $e');
+      return const LibraryResult(error: 'Could not load this template');
+    }
+  }
+
+  /// GET /api/published-templates. The caller's own rows, including unpublished.
+  Future<LibraryResult> fetchOwnedPublishedTemplates(String? token) async {
+    try {
+      return await _libraryGet(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates'),
+        token,
+      );
+    } catch (e) {
+      logger.e('Error loading published templates: $e');
+      return const LibraryResult(error: 'Could not load your templates');
+    }
+  }
+
+  /// POST preview. Nothing is saved.
+  Future<LibraryResult> previewPublishedTemplate({
+    required String planId,
+    required Map<String, dynamic> fields,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return const LibraryResult(status: 401);
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates/from/$planId/preview'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(fields),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error previewing a template: $e');
+      return const LibraryResult(error: 'Could not preview this template');
+    }
+  }
+
+  /// POST publish. Creates or updates the one public template for this plan.
+  Future<LibraryResult> publishTemplate({
+    required String planId,
+    required Map<String, dynamic> fields,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return const LibraryResult(status: 401);
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates/from/$planId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(fields),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error publishing a template: $e');
+      return const LibraryResult(error: 'Could not publish this template');
+    }
+  }
+
+  /// PATCH /api/published-templates/:id. Existing copies stay as they are.
+  Future<LibraryResult> updatePublishedTemplate({
+    required String templateId,
+    required Map<String, dynamic> fields,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return const LibraryResult(status: 401);
+      final response = await http.patch(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates/$templateId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(fields),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error updating a published template: $e');
+      return const LibraryResult(error: 'Could not update this template');
+    }
+  }
+
+  /// POST unpublish. The public page closes. Copies stay.
+  Future<LibraryResult> unpublishTemplate({
+    required String templateId,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) return const LibraryResult(status: 401);
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPublishedTemplates/$templateId/unpublish'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error unpublishing a template: $e');
+      return const LibraryResult(error: 'Could not unpublish this template');
+    }
+  }
+
+  /// POST copy. A free account can copy. The new plan is theirs.
+  Future<PlanLinkResult> copyPublishedTemplate({
+    required String templateId,
+    required String name,
+    required String startDate,
+    required String? token,
+  }) async {
+    try {
+      _writeMessage = null;
+      _upgradePack = null;
+      _upgradeTierName = null;
+      if (token == null || token.isEmpty) {
+        return const PlanLinkResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPublicTemplates/$templateId/copy'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'name': name, 'startDate': startDate}),
+      );
+      if (response.statusCode != 201) {
+        _writeMessage = _apiErrorMessage(response.body);
+        _readUpgrade(response.body);
+        return PlanLinkResult(status: response.statusCode, error: _writeMessage);
+      }
+      final data = json.decode(response.body);
+      final planJson = data is Map ? data['plan'] : null;
+      if (planJson is! Map) return PlanLinkResult(status: response.statusCode);
+      final created = Plan.fromJson(Map<String, dynamic>.from(planJson));
+      _replacePlan(created);
+      _viewerRoles[created.id] = 'Owner';
+      return PlanLinkResult(status: 201, plan: created);
+    } catch (e) {
+      logger.e('Error copying a published template: $e');
+      return const PlanLinkResult(error: 'Could not copy this template');
+    }
+  }
+
+  /// POST report. A signed-in caller is named on the report. No account is required.
+  Future<LibraryResult> reportPublishedTemplate({
+    required String templateId,
+    required String reason,
+    String? token,
+  }) async {
+    try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPublicTemplates/$templateId/report'),
+        headers: headers,
+        body: json.encode({'reason': reason}),
+      );
+      return _libraryResponse(response);
+    } catch (e) {
+      logger.e('Error reporting a template: $e');
+      return const LibraryResult(error: 'Could not send the report');
     }
   }
 

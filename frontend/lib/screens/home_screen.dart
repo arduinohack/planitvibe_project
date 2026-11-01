@@ -14,6 +14,7 @@ import 'invitations_screen.dart';
 import 'plan_detail_screen.dart';
 import 'user_profile_screen.dart'; // For profile
 import 'settings_screen.dart';
+import 'library_screen.dart';
 import 'templates_screen.dart';
 import '../models/user.dart'; // For UserRole enum
 
@@ -96,6 +97,18 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('PlanItVibe'), // App title
         actions: [
+          IconButton(
+            icon: const Icon(Icons.public),
+            tooltip: 'Library',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const LibraryScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.bookmark_border),
             tooltip: 'Templates',

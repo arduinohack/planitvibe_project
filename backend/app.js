@@ -75,6 +75,9 @@ const plansRouter = require('./routes/plans');
 const { planInviteRouter, invitesRouter } = require('./routes/invites');
 app.use('/api/plans', authMiddleware, plansRouter, planInviteRouter);
 app.use('/api/templates', authMiddleware, require('./routes/templates'));
+const { publicRouter, ownerRouter } = require('./routes/publishedTemplates');
+app.use('/api/public/templates', publicRouter);
+app.use('/api/published-templates', authMiddleware, ownerRouter);
 
 // Activity API. The handlers live at /api/activities. /api/events is not mounted.
 const eventRoutes = require('./routes/events');

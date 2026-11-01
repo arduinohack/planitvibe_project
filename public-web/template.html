@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Template · PlanItVibe</title>
+  <link rel="icon" href="planitvibe_logo.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="index.html">
+      <img src="planitvibe_logo.png" alt="" width="48" height="48">
+      <span>PlanItVibe</span>
+    </a>
+    <nav>
+      <a href="templates.html">Templates</a>
+      <a href="index.html#invite-request">Request an invitation</a>
+    </nav>
+  </header>
+  <main>
+    <p id="status" class="request-status" role="status"></p>
+    <article id="template"></article>
+  </main>
+  <script>
+    const apiBase = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      ? 'http://127.0.0.1:3000'
+      : 'https://planitvibe.com';
+    const status = document.getElementById('status');
+    const root = document.getElementById('template');
+    const id = new URLSearchParams(location.search).get('id') || '';
+
+    function addText(parent, tag, text) {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      parent.appendChild(node);
+      return node;
+    }
+
+    async function load() {
+      if (!id) {
+        status.textContent = 'Template not found';
+        return;
+      }
+      try {
+        const response = await fetch(`${apiBase}/api/public/templates/${encodeURIComponent(id)}`);
+        const body = await response.json();
+        if (!response.ok || !body.template) {
+          status.textContent = 'Template not found';
+          return;
+        }
+        const template = body.template;
+        document.title = `${template.title || 'Template'} · PlanItVibe`;
+        if (template.coverImage) {
+          const image = document.createElement('img');
+          image.className = 'cover';
+          image.alt = '';
+          image.src = template.coverImage;
+          root.appendChild(image);
+        }
+        addText(root, 'h1', template.title || 'Template');
+        addText(root, 'p', template.description || '');
+        addText(
+          root,
+          'p',
+          `${template.city || ''} · ${template.tripLength || ''} days · ${template.vibe || ''}`,
+        );
+        addText(root, 'p', `By ${template.creatorName || 'A PlanItVibe member'}`);
+        addText(
+          root,
+          'p',
+          `${template.copyCount || 0} copies · ${template.viewCount || 0} views`,
+        );
+        const stops = Array.isArray(template.stops) ? template.stops : [];
+        for (const stop of stops) {
+          const when = [
+            stop.day ? `Day ${stop.day}` : '',
+            stop.start && stop.end ? `${stop.start}–${stop.end}` : (stop.start || ''),
+          ].filter(Boolean).join(' ');
+          const line = [when, stop.name || 'Stop'].filter(Boolean).join(' ');
+          addText(root, 'p', stop.details ? `${line}\n${stop.details}` : line);
+        }
+        addText(root, 'h2', 'Copy this plan');
+        addText(
+          root,
+          'p',
+          'Signup is by invitation. Sign in to copy this plan. If you have an invitation but no account yet, create your account here and you will stay on this page to copy it. If you do not have an invitation, request one below and return to this page after you are invited.',
+        );
+        const copyStatus = document.createElement('p');
+        copyStatus.className = 'request-status';
+        copyStatus.setAttribute('role', 'status');
+        root.appendChild(copyStatus);
+
+        const sessionKey = 'planitvibe_token';
+        function apiMessage(data) {
+          if (!data) return '';
+          return data.msg || data.message || '';
+        }
+        function field(form, idName, labelText, type) {
+          const label = document.createElement('label');
+          label.htmlFor = idName;
+          label.textContent = labelText;
+          const input = document.createElement('input');
+          input.id = idName;
+          input.name = idName;
+          input.type = type;
+          input.required = true;
+          form.append(label, input);
+          return input;
+        }
+        function button(form, text) {
+          const node = document.createElement('button');
+          node.type = 'submit';
+          node.textContent = text;
+          form.appendChild(node);
+          return node;
+        }
+
+        const signIn = document.createElement('form');
+        signIn.className = 'stack';
+        addText(signIn, 'h3', 'Sign in to copy');
+        const signInEmail = field(signIn, 'sign-in-email', 'Email', 'email');
+        const signInPassword = field(signIn, 'sign-in-password', 'Password', 'password');
+        const signInButton = button(signIn, 'Sign in');
+        root.appendChild(signIn);
+
+        const copyForm = document.createElement('form');
+        copyForm.className = 'stack';
+        copyForm.hidden = true;
+        const copyName = field(copyForm, 'copy-name', 'Plan name', 'text');
+        copyName.value = template.title || '';
+        const copyStart = field(copyForm, 'copy-start', 'Start date', 'date');
+        const copyButton = button(copyForm, 'Copy');
+        const signOut = document.createElement('button');
+        signOut.type = 'button';
+        signOut.textContent = 'Sign out';
+        copyForm.appendChild(signOut);
+        root.appendChild(copyForm);
+
+        const signUp = document.createElement('form');
+        signUp.className = 'stack';
+        addText(signUp, 'h3', 'Have an invitation?');
+        addText(
+          signUp,
+          'p',
+          'Create your account here. You stay on this template and can copy it next. If verification cannot finish on this page, create the account in PlanItVibe, then return here and sign in.',
+        );
+        const signUpFirst = field(signUp, 'sign-up-first', 'First name', 'text');
+        const signUpLast = field(signUp, 'sign-up-last', 'Last name', 'text');
+        const signUpEmail = field(signUp, 'sign-up-email', 'Email', 'email');
+        const signUpPassword = field(signUp, 'sign-up-password', 'Password', 'password');
+        const signUpButton = button(signUp, 'Create your account');
+        root.appendChild(signUp);
+
+        const requestForm = document.createElement('form');
+        requestForm.className = 'stack';
+        requestForm.id = 'invite-request';
+        addText(requestForm, 'h3', 'No invitation yet?');
+        addText(
+          requestForm,
+          'p',
+          'Signup is by invitation. Request one here. This page stays open so you can sign in and copy after you are invited.',
+        );
+        const requestName = field(requestForm, 'request-name', 'Name', 'text');
+        const requestEmail = field(requestForm, 'request-email', 'Email', 'email');
+        const requestButton = button(requestForm, 'Request an invitation');
+        root.appendChild(requestForm);
+
+        function showSignedIn(on) {
+          signIn.hidden = on;
+          signUp.hidden = on;
+          requestForm.hidden = on;
+          copyForm.hidden = !on;
+        }
+        showSignedIn(Boolean(sessionStorage.getItem(sessionKey)));
+
+        signOut.addEventListener('click', () => {
+          sessionStorage.removeItem(sessionKey);
+          showSignedIn(false);
+          copyStatus.textContent = 'Sign in to copy this plan.';
+        });
+
+        signIn.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          copyStatus.textContent = '';
+          signInButton.disabled = true;
+          try {
+            const response = await fetch(`${apiBase}/api/auth/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: signInEmail.value.trim(),
+                password: signInPassword.value,
+              }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok && data.token) {
+              sessionStorage.setItem(sessionKey, data.token);
+              showSignedIn(true);
+              copyStatus.textContent = 'You are signed in. Copy this plan below.';
+              return;
+            }
+            copyStatus.textContent = apiMessage(data) || 'Sign in failed.';
+          } catch (err) {
+            copyStatus.textContent = 'Sign in failed.';
+          } finally {
+            signInButton.disabled = false;
+          }
+        });
+
+        signUp.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          copyStatus.textContent = '';
+          signUpButton.disabled = true;
+          try {
+            const response = await fetch(`${apiBase}/api/auth/register`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                firstName: signUpFirst.value.trim(),
+                lastName: signUpLast.value.trim(),
+                email: signUpEmail.value.trim(),
+                password: signUpPassword.value,
+              }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 201 && data.token) {
+              sessionStorage.setItem(sessionKey, data.token);
+              showSignedIn(true);
+              copyStatus.textContent = 'Your account is ready. You are back on this template. Copy this plan below.';
+              return;
+            }
+            const message = apiMessage(data);
+            if (response.status === 403) {
+              copyStatus.textContent = message || 'Signup is by invitation.';
+              requestForm.scrollIntoView();
+              return;
+            }
+            copyStatus.textContent = message || 'The account was not created.';
+          } catch (err) {
+            copyStatus.textContent = 'The account was not created.';
+          } finally {
+            signUpButton.disabled = false;
+          }
+        });
+
+        copyForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          copyStatus.textContent = '';
+          copyButton.disabled = true;
+          try {
+            const token = sessionStorage.getItem(sessionKey) || '';
+            const response = await fetch(
+              `${apiBase}/api/public/templates/${encodeURIComponent(id)}/copy`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  name: copyName.value.trim(),
+                  startDate: copyStart.value,
+                }),
+              },
+            );
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 201) {
+              const copiedName = data.plan && data.plan.name ? data.plan.name : copyName.value.trim();
+              copyStatus.textContent = `Copied into your account as ${copiedName}. Open PlanItVibe to edit it.`;
+              return;
+            }
+            if (response.status === 401) {
+              sessionStorage.removeItem(sessionKey);
+              showSignedIn(false);
+              copyStatus.textContent = 'Sign in again to copy this plan.';
+              return;
+            }
+            copyStatus.textContent = apiMessage(data) || 'Could not copy this plan.';
+          } catch (err) {
+            copyStatus.textContent = 'Could not copy this plan.';
+          } finally {
+            copyButton.disabled = false;
+          }
+        });
+
+        requestForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          copyStatus.textContent = '';
+          requestButton.disabled = true;
+          try {
+            const response = await fetch(`${apiBase}/api/auth/request-invite`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: requestName.value.trim(),
+                email: requestEmail.value.trim(),
+              }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok && data.exists === true) {
+              copyStatus.textContent = 'That email already has an account. Sign in above to copy this plan.';
+              signIn.scrollIntoView();
+              return;
+            }
+            if (response.ok && data.exists === false) {
+              requestForm.reset();
+              copyStatus.textContent = 'The request was received. Return to this page after you are invited, then sign in to copy.';
+              return;
+            }
+            copyStatus.textContent = apiMessage(data) || 'The request was not sent.';
+          } catch (err) {
+            copyStatus.textContent = 'The request was not sent.';
+          } finally {
+            requestButton.disabled = false;
+          }
+        });
+
+        const form = document.createElement('form');
+        form.className = 'stack';
+        const label = document.createElement('label');
+        label.htmlFor = 'reason';
+        label.textContent = 'Report this template';
+        const input = document.createElement('textarea');
+        input.id = 'reason';
+        input.required = true;
+        input.maxLength = 500;
+        const reportButton = document.createElement('button');
+        reportButton.type = 'submit';
+        reportButton.textContent = 'Report';
+        const note = document.createElement('p');
+        note.className = 'request-status';
+        form.append(label, input, reportButton, note);
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          note.textContent = '';
+          reportButton.disabled = true;
+          try {
+            const reported = await fetch(
+              `${apiBase}/api/public/templates/${encodeURIComponent(id)}/report`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: input.value.trim() }),
+              },
+            );
+            note.textContent = reported.ok ? 'Report sent' : 'Could not send the report';
+            if (reported.ok) input.value = '';
+          } catch (err) {
+            note.textContent = 'Could not send the report';
+          }
+          reportButton.disabled = false;
+        });
+        root.appendChild(form);
+      } catch (err) {
+        status.textContent = 'Could not load this template';
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

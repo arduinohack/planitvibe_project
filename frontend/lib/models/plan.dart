@@ -339,6 +339,9 @@ class Plan {
   final DateTime? earliestStart;
   final DateTime? latestEnd;
   final String sourcePlanId;
+  final String basedOnTemplateId;
+  final String basedOnTitle;
+  final String basedOnCreator;
   final List<String> linkedActivityIds;
   final DateTime? linkStart;
   final DateTime? linkEnd;
@@ -370,6 +373,9 @@ class Plan {
     this.earliestStart,
     this.latestEnd,
     this.sourcePlanId = '',
+    this.basedOnTemplateId = '',
+    this.basedOnTitle = '',
+    this.basedOnCreator = '',
     this.linkedActivityIds = const [],
     this.linkStart,
     this.linkEnd,
@@ -402,6 +408,9 @@ class Plan {
       earliestStart: earliestStart,
       latestEnd: latestEnd,
       sourcePlanId: sourcePlanId,
+      basedOnTemplateId: basedOnTemplateId,
+      basedOnTitle: basedOnTitle,
+      basedOnCreator: basedOnCreator,
       linkedActivityIds: linkedActivityIds,
       linkStart: linkStart,
       linkEnd: linkEnd,
@@ -449,6 +458,9 @@ class Plan {
       earliestStart: _dateValue(json['earliestStart']),
       latestEnd: _dateValue(json['latestEnd']),
       sourcePlanId: _stringValue(json['sourcePlanId']),
+      basedOnTemplateId: _stringValue(json['basedOnTemplateId']),
+      basedOnTitle: _stringValue(json['basedOnTitle']),
+      basedOnCreator: _stringValue(json['basedOnCreator']),
       linkedActivityIds: _stringList(json['linkedActivityIds']),
       linkStart: _dateValue(json['linkStart']),
       linkEnd: _dateValue(json['linkEnd']),

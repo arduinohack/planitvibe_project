@@ -31,6 +31,7 @@ import '../widgets/activity_attachments.dart';
 import 'activity_history_screen.dart';
 import 'login_screen.dart';
 import 'plan_people_screen.dart';
+import 'publish_template_screen.dart';
 
 const activityTypes = [
   'flight',
@@ -2729,6 +2730,29 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     );
   }
 
+  Future<void> _openPublish(Plan plan) async {
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final activities = activitiesByUtcStart(planProvider.itineraryActivities);
+    final shownTimes = _shownActivityTimes(activities);
+    final days = planItinerarySpan(
+      starts: [for (final time in shownTimes) time.start],
+      ends: [for (final time in shownTimes) time.end ?? time.start],
+      planTimeZone: plan.timeZone,
+    );
+    final city = plan.destination.trim();
+    final length = days.isEmpty ? 1 : (days.length > 60 ? 60 : days.length);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PublishTemplateScreen(
+          planId: plan.id,
+          initialTitle: plan.name,
+          initialCity: city.length <= 60 ? city : '',
+          initialTripLength: length,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openPlanEdit(Plan plan, String? storedRole) async {
     final removed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -3084,6 +3108,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                         ),
                       if (dateLine != null) Text(dateLine),
                       Text('State: ${shown.planningState}'),
+                      if (shown.basedOnTitle.trim().isNotEmpty)
+                        Text(
+                          shown.basedOnCreator.trim().isEmpty
+                              ? 'Based on ${shown.basedOnTitle.trim()}'
+                              : 'Based on ${shown.basedOnTitle.trim()} by ${shown.basedOnCreator.trim()}',
+                        ),
                       if (storedRole?.trim() == 'Owner' && !shown.isArchived)
                         Align(
                           alignment: Alignment.centerLeft,
@@ -3096,6 +3126,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               TextButton(
                                 onPressed: () => _saveAsTemplate(shown),
                                 child: const Text('Save as template'),
+                              ),
+                              TextButton(
+                                onPressed: () => _openPublish(shown),
+                                child: const Text('Publish as template'),
                               ),
                             ],
                           ),

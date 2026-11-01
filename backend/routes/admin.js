@@ -14,6 +14,8 @@ const {
 } = require('../utils/activityReactions');
 const { syncPlanDates } = require('../utils/syncPlanDates');
 const { add: addAiCredits } = require('../utils/aiCredits');
+const PublishedTemplate = require('../models/PublishedTemplate');
+const { ownerCard } = require('../utils/publishedTemplate');
 
 const router = express.Router();
 
@@ -445,6 +447,29 @@ router.delete('/users/:userId', async (req, res) => {
   } catch (err) {
     console.error(`Admin delete user failed: ${err.message}`);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Reviewer path for a reported public template. Copies are left in place.
+router.post('/published-templates/:id/unpublish', async (req, res) => {
+  try {
+    const templateId = String(req.params.id || '');
+    const doc = await PublishedTemplate.findById(templateId);
+    if (!doc) return res.status(404).json({ message: 'Template not found' });
+    doc.published = false;
+    await doc.save();
+    const callerId = String((req.user && (req.user.userId || req.user.id)) || '');
+    await logSupport({
+      level: 'info',
+      event: 'TemplateUnpublishedByAdmin',
+      actorUserId: callerId,
+      message: 'Published template unpublished by a reviewer',
+      extra: { templateId },
+    });
+    return res.json({ template: ownerCard(doc) });
+  } catch (err) {
+    console.error(`Admin unpublish template failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
