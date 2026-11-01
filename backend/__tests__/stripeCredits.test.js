@@ -331,6 +331,9 @@ describe('Plus subscription', () => {
       tier: 'trial',
       tierName: 'PlanItVibe (Trial)',
       planCap: 2,
+      subscribedAt: null,
+      currentPeriodEnd: null,
+      expiredAt: null,
     });
   });
 
@@ -423,6 +426,9 @@ describe('Plus subscription', () => {
     expect(stored.stripeCustomerId).toBe('cus_plus');
     expect(stored.stripeSubscriptionId).toBe('sub_plus');
     expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period1 * 1000);
+    expect(stored.subscribedAt).toBeInstanceOf(Date);
+    expect(stored.expiredAt == null).toBe(true);
+    const subscribedAt = stored.subscribedAt.toISOString();
 
     await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 25 } });
     const renewal = await postWebhook({
@@ -491,6 +497,9 @@ describe('Plus subscription', () => {
     });
     expect(samePeriod.status).toBe(200);
     expect(await getBalance(ada.userId)).toBe(100);
+    stored = await User.findById(ada.userId).lean();
+    expect(stored.subscribedAt.toISOString()).toBe(subscribedAt);
+    expect(stored.plusCurrentPeriodEnd.getTime()).toBe(period3 * 1000);
 
     const canceled = await postWebhook({
       id: 'evt_plus_canceled',
@@ -544,6 +553,8 @@ describe('Plus subscription', () => {
     stored = await User.findById(ada.userId).lean();
     expect(stored.plusActive).toBe(false);
     expect(stored.tier).toBe('trial');
+    expect(stored.expiredAt).toBeInstanceOf(Date);
+    expect(stored.subscribedAt.toISOString()).toBe(subscribedAt);
 
     const shown = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(shown.body).toEqual({
@@ -556,6 +567,9 @@ describe('Plus subscription', () => {
       tier: 'trial',
       tierName: 'PlanItVibe (Trial)',
       planCap: 2,
+      subscribedAt,
+      currentPeriodEnd: new Date(period3 * 1000).toISOString(),
+      expiredAt: stored.expiredAt.toISOString(),
     });
   });
 
@@ -679,5 +693,60 @@ describe('Plus subscription', () => {
       expect(stored.plusActive).toBe(true);
       expect(stored.stripeSubscriptionId).toBe(`sub_${tier}`);
     }
+  });
+
+  test('a completed checkout for a lower tier switches that subscription', async () => {
+    process.env.STRIPE_PRICE_PLUS_MONTHLY = PRICE_PLUS_MONTHLY;
+    process.env.STRIPE_PRICE_PLANITVIBE = 'price_planitvibe';
+    const ada = await registerAndLogin('downgrade-checkout@example.com');
+    const plus = await postWebhook({
+      id: 'evt_down_plus',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_down_plus',
+          mode: 'subscription',
+          payment_status: 'paid',
+          customer: 'cus_down',
+          subscription: 'sub_plus_down',
+          metadata: plusMetadata(ada.userId, PRICE_PLUS_MONTHLY),
+        },
+      },
+    });
+    expect(plus.status).toBe(200);
+    const started = await User.findById(ada.userId).lean();
+    expect(started.tier).toBe('plus');
+    expect(started.subscribedAt).toBeInstanceOf(Date);
+
+    const lower = await postWebhook({
+      id: 'evt_down_base',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_down_base',
+          mode: 'subscription',
+          payment_status: 'paid',
+          customer: 'cus_down',
+          subscription: 'sub_base_down',
+          metadata: {
+            userId: ada.userId,
+            type: 'planitvibe',
+            priceId: 'price_planitvibe',
+          },
+        },
+      },
+    });
+    expect(lower.status).toBe(200);
+    const stored = await User.findById(ada.userId).lean();
+    expect(stored.tier).toBe('planitvibe');
+    expect(stored.stripeSubscriptionId).toBe('sub_base_down');
+    expect(stored.subscribedAt).toBeInstanceOf(Date);
+    expect(stored.expiredAt == null).toBe(true);
+    const shown = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(shown.status).toBe(200);
+    expect(shown.body.tier).toBe('planitvibe');
+    expect(shown.body.subscribedAt).toBe(stored.subscribedAt.toISOString());
+    expect(shown.body.currentPeriodEnd).toBeNull();
+    expect(shown.body.expiredAt).toBeNull();
   });
 });

@@ -85,7 +85,9 @@ async function ownedPlanCount(userId) {
 async function loadAccessUser(userId) {
   const id = userIdOf(userId);
   if (!id) return null;
-  return User.findById(id).select('plusActive tier trialStartedAt trialEndsAt emailVerified').lean();
+  return User.findById(id).select(
+    'plusActive tier trialStartedAt trialEndsAt emailVerified subscribedAt plusCurrentPeriodEnd expiredAt',
+  ).lean();
 }
 
 async function accessSummary(userId) {
@@ -104,6 +106,9 @@ async function accessSummary(userId) {
     tier,
     tierName: tierName(tier),
     planCap: planCapFor(tier),
+    subscribedAt: isoOrNull(user && user.subscribedAt),
+    currentPeriodEnd: isoOrNull(user && user.plusCurrentPeriodEnd),
+    expiredAt: isoOrNull(user && user.expiredAt),
   };
 }
 

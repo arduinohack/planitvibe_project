@@ -424,8 +424,26 @@ function paidTierOf(user) {
   return resolveTier(user);
 }
 
-async function markPlus({ userId, customerId, subscriptionId, priceId, periodEnd, active, tier }) {
-  const existing = await User.findById(userId).select('tier plusActive stripeSubscriptionId').lean();
+function subscriptionEndedAt(subscription) {
+  return unixDate(subscription && subscription.ended_at)
+    || unixDate(subscription && subscription.canceled_at)
+    || new Date();
+}
+
+async function markPlus({
+  userId,
+  customerId,
+  subscriptionId,
+  priceId,
+  periodEnd,
+  active,
+  tier,
+  setSubscribedAt,
+  allowLower,
+}) {
+  const existing = await User.findById(userId)
+    .select('tier plusActive stripeSubscriptionId subscribedAt')
+    .lean();
   if (!existing) {
     logger.error('Stripe Plus user was not found', {
       event: 'StripeWebhook',
@@ -436,17 +454,26 @@ async function markPlus({ userId, customerId, subscriptionId, priceId, periodEnd
   const currentTier = paidTierOf(existing);
   const currentSub = textId(existing.stripeSubscriptionId);
   if (tier && subscriptionId && currentSub && currentSub !== subscriptionId) {
-    if (tierRank(tier) < tierRank(currentTier)) return;
+    if (!allowLower && tierRank(tier) < tierRank(currentTier)) return;
   }
   const update = {};
+  const unset = {};
   if (typeof active === 'boolean') update.plusActive = active;
   if (tier) update.tier = tier;
   if (customerId) update.stripeCustomerId = customerId;
   if (subscriptionId) update.stripeSubscriptionId = subscriptionId;
   if (priceId) update.plusPriceId = priceId;
   if (periodEnd) update.plusCurrentPeriodEnd = periodEnd;
-  if (!Object.keys(update).length) return;
-  await User.updateOne({ _id: userId }, { $set: update });
+  if (active === true) unset.expiredAt = '';
+  if (setSubscribedAt) {
+    const sameSubscription = Boolean(subscriptionId) && currentSub === subscriptionId;
+    if (!(sameSubscription && existing.subscribedAt)) update.subscribedAt = new Date();
+  }
+  const op = {};
+  if (Object.keys(update).length) op.$set = update;
+  if (Object.keys(unset).length) op.$unset = unset;
+  if (!Object.keys(op).length) return;
+  await User.updateOne({ _id: userId }, op);
 }
 
 async function userIdForSubscription(subscriptionId, customerId) {
@@ -488,6 +515,8 @@ async function applyPlusCheckout(event, session) {
       periodEnd,
       active: true,
       tier,
+      setSubscribedAt: true,
+      allowLower: true,
     });
     const keys = [
       periodGrantKey(subscriptionId, periodEnd),
@@ -574,7 +603,13 @@ async function applyPlusSubscription(event) {
       if (subscriptionId && currentSub && currentSub !== subscriptionId) return;
       await User.updateOne(
         { _id: userId },
-        { $set: { plusActive: false, tier: 'trial' } },
+        {
+          $set: {
+            plusActive: false,
+            tier: 'trial',
+            expiredAt: subscriptionEndedAt(subscription),
+          },
+        },
       );
       return;
     }

@@ -174,6 +174,9 @@ describe('AI credits', () => {
       tier: 'trial',
       tierName: 'PlanItVibe (Trial)',
       planCap: 2,
+      subscribedAt: null,
+      currentPeriodEnd: null,
+      expiredAt: null,
     });
 
     const missing = await request(app).get(CREDITS);
@@ -246,6 +249,9 @@ describe('AI credits', () => {
       tier: 'trial',
       tierName: 'PlanItVibe (Trial)',
       planCap: 2,
+      subscribedAt: null,
+      currentPeriodEnd: null,
+      expiredAt: null,
     });
     expect(await getBalance(admin.userId)).toBe(0);
 

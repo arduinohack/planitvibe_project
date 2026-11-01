@@ -54,6 +54,12 @@ const userSchema = new mongoose.Schema({
   trialEndsAt: { type: Date },
   plusPriceId: { type: String },
   plusCurrentPeriodEnd: { type: Date },
+  // Start of the current paid subscription. A renewal of that same subscription
+  // does not move it. Null until the first paid checkout.
+  subscribedAt: { type: Date },
+  // Set when that subscription is deleted, canceled, or unpaid. Cleared when
+  // a paid tier is active again.
+  expiredAt: { type: Date },
   stripeCustomerId: { type: String },
   stripeSubscriptionId: { type: String },
   createdAt: { type: Date, default: Date.now }
