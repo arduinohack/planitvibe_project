@@ -99,7 +99,6 @@ const _pdfColumns = [
   _PdfColumn('Origin country', _originCountryCell),
   _PdfColumn('Destination', _destinationCell),
   _PdfColumn('Details', _detailsCell, flex: true),
-  _PdfColumn('Booking reference', _bookingReferenceCell),
   _PdfColumn('Confirmation', _confirmationCell),
   _PdfColumn(
     'Cost',
@@ -122,7 +121,6 @@ String _originCell(PlanPdfRow row) => row.origin;
 String _originCountryCell(PlanPdfRow row) => row.originCountry;
 String _destinationCell(PlanPdfRow row) => row.destination;
 String _detailsCell(PlanPdfRow row) => row.details;
-String _bookingReferenceCell(PlanPdfRow row) => row.bookingReference;
 String _confirmationCell(PlanPdfRow row) => row.confirmation;
 String _costCell(PlanPdfRow row) => row.cost;
 String _gateCell(PlanPdfRow row) => row.gate;
@@ -210,7 +208,7 @@ double _columnMinWidth(
 }
 
 /// Per-day widths from printed values. Empty columns get none. Leftover goes
-/// to Name and Details. Booking reference stays content-sized.
+/// to Name and Details.
 Map<int, pw.TableColumnWidth> _balancedColumnWidths(
   PdfFont headerFont,
   PdfFont bodyFont,

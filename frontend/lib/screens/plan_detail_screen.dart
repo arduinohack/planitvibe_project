@@ -618,10 +618,6 @@ _ActivityCardContent _activityCardContent(
   if (_typeUsesLocation(storedType) && !placeReplacesLocation) {
     _addCardLine(below, 'Location', activity.location);
   }
-  if (!hiddenFields.contains('bookingReference') &&
-      _typeUsesBookingReference(storedType)) {
-    _addCardLine(below, 'Booking reference', activity.bookingReference);
-  }
   if (_typeUsesConfirmation(storedType)) {
     _addCardLine(below, 'Confirmation', activity.confirmation);
   }
@@ -2904,7 +2900,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           alignment: Alignment.centerLeft,
                           child: TextButton(
                             onPressed: () => _linkMyPlan(shown),
-                            child: const Text('Link my plan'),
+                            child: const Text('Link To This Plan'),
                           ),
                         ),
                     ],
@@ -3037,9 +3033,7 @@ PlanPdfRow _pdfActivityRow(
     duration: _durationLabel(activity),
     location: activity.location?.trim() ?? '',
     details: hiddenFields.contains('details') ? '' : _detailsLabel(activity),
-    bookingReference: hiddenFields.contains('bookingReference')
-        ? ''
-        : activity.bookingReference?.trim() ?? '',
+    bookingReference: '',
     origin: activity.origin?.trim() ?? '',
     originCountry: activity.originCountry?.trim() ?? '',
     destination: activity.destination?.trim() ?? '',
@@ -6396,7 +6390,7 @@ class _LinkActivitiesDialogState extends State<_LinkActivitiesDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Link my plan'),
+      title: const Text('Link To This Plan'),
       content: SizedBox(
         width: double.maxFinite,
         height: 360,
