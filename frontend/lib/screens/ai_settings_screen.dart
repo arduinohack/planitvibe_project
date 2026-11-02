@@ -104,7 +104,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   String _provider = 'none';
   String _savedProvider = 'none';
   bool _hasKey = false;
-  num? _credits;
+  num? _monthlyCredits;
+  num? _purchasedCredits;
   String _tier = tierTrial;
   String _tierName = tierTrialName;
   int _planCap = 2;
@@ -139,7 +140,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   void _applyStatus(
     String provider,
     bool hasKey,
-    num credits, {
+    num monthlyCredits,
+    num purchasedCredits, {
     String tier = tierTrial,
     String? tierName,
     int? planCap,
@@ -153,7 +155,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     setState(() {
       _savedProvider = provider;
       _hasKey = hasKey;
-      _credits = credits;
+      _monthlyCredits = monthlyCredits;
+      _purchasedCredits = purchasedCredits;
       _tier = tier;
       _tierName = tierName == null || tierName.trim().isEmpty
           ? tierDisplayName(tier)
@@ -213,8 +216,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       }
       final data = json.decode(settings.body);
       final creditBody = json.decode(credits.body);
-      final balance = creditBody is Map ? creditBody['aiCredits'] : null;
-      if (data is! Map || data['hasKey'] is! bool || balance is! num) {
+      final monthly = creditBody is Map ? creditBody['monthlyCredits'] : null;
+      final purchased = creditBody is Map ? creditBody['purchasedCredits'] : null;
+      if (data is! Map || data['hasKey'] is! bool || monthly is! num || purchased is! num) {
         setState(() {
           _loading = false;
           _busy = false;
@@ -234,7 +238,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       _applyStatus(
         _knownProvider(data['aiProvider']),
         data['hasKey'] as bool,
-        balance,
+        monthly,
+        purchased,
         tier: tier,
         tierName: rawName is String ? rawName : null,
         planCap: rawCap is num ? rawCap.round() : null,
@@ -400,9 +405,15 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   ],
                   const SizedBox(height: 8),
                   Text(
-                    _credits == null
-                        ? 'AI credits: —'
-                        : 'AI credits: ${_creditText(_credits!)}',
+                    _monthlyCredits == null
+                        ? 'Monthly credits: —'
+                        : 'Monthly credits: ${_creditText(_monthlyCredits!)}',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _purchasedCredits == null
+                        ? 'Purchased credits: —'
+                        : 'Purchased credits: ${_creditText(_purchasedCredits!)}',
                   ),
                   const SizedBox(height: 8),
                   Wrap(

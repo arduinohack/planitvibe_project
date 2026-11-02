@@ -29,7 +29,8 @@ void main() {
     expect(find.text('Upgrade to PlanItVibe Pro'), findsOneWidget);
     expect(find.text('Downgrade to PlanItVibe'), findsNothing);
     expect(find.text('Refresh'), findsOneWidget);
-    expect(find.text('AI credits: —'), findsOneWidget);
+    expect(find.text('Monthly credits: —'), findsOneWidget);
+    expect(find.text('Purchased credits: —'), findsOneWidget);
   });
 
   test('paid tiers list upgrades above and downgrades below', () {
