@@ -213,6 +213,11 @@ describe('Stripe credit packs', () => {
       .send(bigger);
     expect(second.status).toBe(200);
     expect(await getBalance(ada.userId)).toBe(600);
+    const stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(0);
+    expect(stored.purchasedCredits).toBe(600);
   });
 
   test('an unpaid session and a bad signature do not grant credits', async () => {
@@ -323,6 +328,8 @@ describe('Plus subscription', () => {
     expect(balance.status).toBe(200);
     expect(balance.body).toEqual({
       aiCredits: 0,
+      monthlyCredits: 0,
+      purchasedCredits: 0,
       plusActive: false,
       trialStartedAt: null,
       trialEndsAt: null,
@@ -559,6 +566,8 @@ describe('Plus subscription', () => {
     const shown = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(shown.body).toEqual({
       aiCredits: 100,
+      monthlyCredits: 100,
+      purchasedCredits: 0,
       plusActive: false,
       trialStartedAt: null,
       trialEndsAt: null,
@@ -748,5 +757,76 @@ describe('Plus subscription', () => {
     expect(shown.body.subscribedAt).toBe(stored.subscribedAt.toISOString());
     expect(shown.body.currentPeriodEnd).toBeNull();
     expect(shown.body.expiredAt).toBeNull();
+  });
+
+  test('a renewal replaces monthly credits and leaves purchased credits', async () => {
+    process.env.STRIPE_PRICE_PLUS_MONTHLY = PRICE_PLUS_MONTHLY;
+    const ada = await registerAndLogin('renew-split@example.com');
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { monthlyCredits: 12, purchasedCredits: 40, aiCredits: 52 } },
+    );
+    const periodEnd = 1767225600;
+    const renewal = await postWebhook({
+      id: 'evt_renew_split',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_renew_split',
+          customer: 'cus_renew_split',
+          subscription: 'sub_renew_split',
+          period_end: periodEnd,
+          metadata: { userId: ada.userId, type: 'plus' },
+          lines: {
+            data: [{
+              price: { id: PRICE_PLUS_MONTHLY },
+              period: { end: periodEnd },
+            }],
+          },
+        },
+      },
+    });
+    expect(renewal.status).toBe(200);
+    let stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits aiCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(100);
+    expect(stored.purchasedCredits).toBe(40);
+    expect(stored.aiCredits).toBe(140);
+    expect(await getBalance(ada.userId)).toBe(140);
+
+    const samePeriod = await postWebhook({
+      id: 'evt_renew_split_again',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          id: 'in_renew_split_again',
+          customer: 'cus_renew_split',
+          subscription: 'sub_renew_split',
+          period_end: periodEnd,
+          metadata: { userId: ada.userId, type: 'plus' },
+          lines: {
+            data: [{ period: { end: periodEnd }, price: { id: PRICE_PLUS_MONTHLY } }],
+          },
+        },
+      },
+    });
+    expect(samePeriod.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(140);
+
+    const pack = await postWebhook(paidEvent('evt_renew_pack', ada.userId, 100));
+    expect(pack.status).toBe(200);
+    stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits aiCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(100);
+    expect(stored.purchasedCredits).toBe(140);
+    expect(stored.aiCredits).toBe(240);
+
+    const shown = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(shown.status).toBe(200);
+    expect(shown.body.monthlyCredits).toBe(100);
+    expect(shown.body.purchasedCredits).toBe(140);
+    expect(shown.body.aiCredits).toBe(240);
   });
 });

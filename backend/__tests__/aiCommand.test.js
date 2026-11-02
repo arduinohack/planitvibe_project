@@ -116,7 +116,10 @@ async function acceptRole(ownerToken, memberToken, planId, email, role) {
 }
 
 async function setCredits(userId, aiCredits) {
-  await User.updateOne({ _id: userId }, { $set: { aiCredits } });
+  await User.updateOne(
+    { _id: userId },
+    { $set: { aiCredits, monthlyCredits: aiCredits, purchasedCredits: 0 } },
+  );
 }
 
 async function addMuseum(token, planId) {

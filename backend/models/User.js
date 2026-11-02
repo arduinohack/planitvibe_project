@@ -44,6 +44,10 @@ const userSchema = new mongoose.Schema({
   },
   aiApiKeyEncrypted: { type: String, select: false },
   aiCredits: { type: Number, default: 0, min: 0 },
+  // Replaced by the tier grant on subscribe and on each renewal.
+  monthlyCredits: { type: Number, default: 0, min: 0 },
+  // Credit packs. A renewal does not change this.
+  purchasedCredits: { type: Number, default: 0, min: 0 },
   plusActive: { type: Boolean, default: false },
   tier: {
     type: String,

@@ -11,7 +11,7 @@ const {
 } = require('../utils/aiProvider');
 const ApiKey = require('../models/ApiKey');
 const { NAME_LIMIT, generateApiKey } = require('../utils/apiKey');
-const { getBalance } = require('../utils/aiCredits');
+const { getCreditBalances } = require('../utils/aiCredits');
 const { accessSummary } = require('../utils/planAccess');
 const { createCreditCheckout } = require('../utils/stripeCredits');
 const router = express.Router();
@@ -108,11 +108,16 @@ async function sendCreditStatus(req, res) {
     if (!userId) return res.status(401).json({ message: 'No token, authorization denied' });
     const user = await User.findById(userId).select('_id').lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const [aiCredits, summary] = await Promise.all([
-      getBalance(userId),
+    const [balances, summary] = await Promise.all([
+      getCreditBalances(userId),
       accessSummary(userId),
     ]);
-    return res.json({ aiCredits, ...summary });
+    return res.json({
+      aiCredits: balances.aiCredits,
+      monthlyCredits: balances.monthlyCredits,
+      purchasedCredits: balances.purchasedCredits,
+      ...summary,
+    });
   } catch (err) {
     console.error('AI credits read failed');
     return res.status(500).json({ message: 'Server error' });

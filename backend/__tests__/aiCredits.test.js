@@ -112,7 +112,10 @@ async function createPlan(token) {
 }
 
 async function setCredits(userId, aiCredits) {
-  await User.updateOne({ _id: userId }, { $set: { aiCredits } });
+  await User.updateOne(
+    { _id: userId },
+    { $set: { aiCredits, monthlyCredits: aiCredits, purchasedCredits: 0 } },
+  );
 }
 
 beforeAll(async () => {
@@ -166,6 +169,8 @@ describe('AI credits', () => {
     expect(balance.status).toBe(200);
     expect(balance.body).toEqual({
       aiCredits: 0,
+      monthlyCredits: 0,
+      purchasedCredits: 0,
       plusActive: false,
       trialStartedAt: null,
       trialEndsAt: null,
@@ -189,7 +194,8 @@ describe('AI credits', () => {
     await setCredits(ada.userId, 2);
 
     const first = await deduct(ada.userId, 1);
-    expect(first).toEqual({ ok: true, aiCredits: 1 });
+    expect(first.ok).toBe(true);
+    expect(first.aiCredits).toBe(1);
     expect(await getBalance(ada.userId)).toBe(1);
 
     const second = await deduct(ada.userId, 1);
@@ -201,11 +207,53 @@ describe('AI credits', () => {
     expect(await getBalance(ada.userId)).toBe(0);
   });
 
+  test('calls spend monthly credits before purchased credits', async () => {
+    const ada = await registerAndLogin('ada-credits-split@example.com');
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { monthlyCredits: 1, purchasedCredits: 2, aiCredits: 3 } },
+    );
+
+    const places = await deduct(ada.userId, 0.5);
+    expect(places.ok).toBe(true);
+    expect(places.aiCredits).toBe(2.5);
+    let stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits aiCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(0.5);
+    expect(stored.purchasedCredits).toBe(2);
+
+    const across = await deduct(ada.userId, 1);
+    expect(across.ok).toBe(true);
+    expect(across.aiCredits).toBe(1.5);
+    stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(0);
+    expect(stored.purchasedCredits).toBe(1.5);
+
+    const short = await deduct(ada.userId, 2);
+    expect(short.ok).toBe(false);
+    expect(short.aiCredits).toBe(1.5);
+    stored = await User.findById(ada.userId)
+      .select('monthlyCredits purchasedCredits')
+      .lean();
+    expect(stored.monthlyCredits).toBe(0);
+    expect(stored.purchasedCredits).toBe(1.5);
+
+    const shown = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(shown.status).toBe(200);
+    expect(shown.body.monthlyCredits).toBe(0);
+    expect(shown.body.purchasedCredits).toBe(1.5);
+    expect(shown.body.aiCredits).toBe(1.5);
+  });
+
   test('deduct and add accept a half credit', async () => {
     const ada = await registerAndLogin('ada-credits-half@example.com');
     expect(await add(ada.userId, 0.5)).toBe(0.5);
     const paid = await deduct(ada.userId, 0.5);
-    expect(paid).toEqual({ ok: true, aiCredits: 0 });
+    expect(paid.ok).toBe(true);
+    expect(paid.aiCredits).toBe(0);
     expect(await getBalance(ada.userId)).toBe(0);
     const short = await deduct(ada.userId, 0.5);
     expect(short.ok).toBe(false);
@@ -241,6 +289,8 @@ describe('AI credits', () => {
     const balance = await request(app).get(CREDITS).set(bearer(ada.token));
     expect(balance.body).toEqual({
       aiCredits: 5,
+      monthlyCredits: 0,
+      purchasedCredits: 5,
       plusActive: false,
       trialStartedAt: null,
       trialEndsAt: null,

@@ -1,6 +1,6 @@
 const Plan = require('../models/Plan');
 const User = require('../models/User');
-const { add } = require('./aiCredits');
+const { addMonthly } = require('./aiCredits');
 const { notArchivedFilter } = require('./planArchive');
 const {
   UPGRADE_MESSAGE,
@@ -121,7 +121,7 @@ async function startTrial(userId, now) {
   ).select('_id');
   if (!updated) return;
   try {
-    const balance = await add(userId, TRIAL_CREDITS);
+    const balance = await addMonthly(userId, TRIAL_CREDITS);
     if (balance == null) {
       await User.updateOne(
         { _id: userId },

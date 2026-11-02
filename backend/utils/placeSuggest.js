@@ -10,7 +10,7 @@ const {
   usesServerKey,
   getBalance,
   deduct,
-  add,
+  restore,
 } = require('./aiCredits');
 
 const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
@@ -371,7 +371,8 @@ async function suggestPlaces({
   }
 
   // Find places and a plan-command place lookup both pass the caller.
-  // A cache miss deducts 0.5. A hit does not. No userId skips the cache and the charge.
+  // Every call deducts 0.5 before the cache lookup. A hit still skips Google.
+  // No userId skips the cache and the charge.
   const placesUserId = usage && typeof usage.userId === 'string' ? usage.userId.trim() : '';
   const typeText = typeof activityType === 'string' ? activityType : '';
   const bias = biasText(
@@ -381,12 +382,9 @@ async function suggestPlaces({
   const cacheKey = placesUserId
     ? suggestCacheKey(placesUserId, query, bias, typeText)
     : '';
-  if (cacheKey) {
-    const cached = readSuggestCache(cacheKey, Date.now());
-    if (cached) return { status: 200, places: cached };
-  }
+  let placesCharge = null;
   if (placesUserId) {
-    const placesCharge = await deduct(placesUserId, PLACES_CREDIT_COST);
+    placesCharge = await deduct(placesUserId, PLACES_CREDIT_COST);
     if (!placesCharge.ok) {
       await recordAiUsage({
         userId: placesUserId,
@@ -409,6 +407,10 @@ async function suggestPlaces({
       success: true,
       credits: PLACES_CREDIT_COST,
     });
+  }
+  if (cacheKey) {
+    const cached = readSuggestCache(cacheKey, Date.now());
+    if (cached) return { status: 200, places: cached };
   }
 
   let modelKey = apiKeyFromClient(aiClient);
@@ -489,8 +491,9 @@ async function suggestPlaces({
   }
   if (modelKey && places.length) {
     let charged = false;
+    let paid = null;
     if (serverCharge) {
-      const paid = await deduct(usage && usage.userId, SUGGEST_CREDIT_COST);
+      paid = await deduct(usage && usage.userId, SUGGEST_CREDIT_COST);
       if (!paid.ok) {
         await recordAiUsage({
           userId: usage && usage.userId,
@@ -523,7 +526,11 @@ async function suggestPlaces({
     );
     if (!model && charged) {
       try {
-        await add(usage && usage.userId, SUGGEST_CREDIT_COST);
+        await restore(
+          usage && usage.userId,
+          paid.spentMonthly,
+          paid.spentPurchased,
+        );
       } catch (_) {
         // A failed summary must still return the Places list.
       }

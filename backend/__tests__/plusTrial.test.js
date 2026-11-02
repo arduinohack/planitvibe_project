@@ -378,7 +378,10 @@ describe('free-owner trial and Plus gating', () => {
     const ada = await registerAndLogin('ada-trial-credits@example.com');
     const created = await postPlan(ada.token, 'Paris');
     expect(created.status).toBe(201);
-    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 0 } });
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { aiCredits: 0, monthlyCredits: 0, purchasedCredits: 0 } },
+    );
 
     const blocked = await request(app)
       .post(`/api/plans/${created.body.plan._id}/ai-command`)
@@ -397,7 +400,10 @@ describe('free-owner trial and Plus gating', () => {
     const created = await postPlan(ada.token, 'Paris');
     expect(created.status).toBe(201);
     const planId = created.body.plan._id;
-    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 5 } });
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { aiCredits: 5, monthlyCredits: 5, purchasedCredits: 0 } },
+    );
     await endAccess(ada.userId);
 
     const blocked = await request(app)

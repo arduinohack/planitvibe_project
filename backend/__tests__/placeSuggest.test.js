@@ -416,7 +416,7 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
-  test('an identical suggest within 5 minutes is cached and charged once', async () => {
+  test('an identical suggest within 5 minutes skips Google and still costs 0.5', async () => {
     process.env.GOOGLE_MAPS_API_KEY = 'test-key';
     delete process.env.XAI_API_KEY;
     axios.get.mockResolvedValue({ status: 200, data: { results: [] } });
@@ -427,7 +427,10 @@ describe('POST /api/plans/:planId/suggest', () => {
       email: 'ada-suggest-cache@example.com',
     });
     const planId = await createPlan(ada.token);
-    await User.updateOne({ _id: ada.userId }, { $set: { aiCredits: 20 } });
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { aiCredits: 20, monthlyCredits: 20, purchasedCredits: 0 } },
+    );
     const body = { query: 'quiet cafe', activityType: 'dining', location: 'Paris' };
 
     const first = await request(app)
@@ -456,11 +459,12 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(again.body).toEqual(first.body);
     expect(axios.post).not.toHaveBeenCalled();
     expect(axios.get).not.toHaveBeenCalled();
-    expect(await getBalance(ada.userId)).toBe(19.5);
+    expect(await getBalance(ada.userId)).toBe(19);
     expect(await AiUsage.countDocuments({
       userId: ada.userId,
       provider: 'google',
-    })).toBe(1);
+      credits: 0.5,
+    })).toBe(2);
 
     const spaced = await request(app)
       .post(`/api/plans/${planId}/suggest`)
@@ -469,7 +473,7 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(spaced.status).toBe(200);
     expect(spaced.body).toEqual(first.body);
     expect(axios.post).not.toHaveBeenCalled();
-    expect(await getBalance(ada.userId)).toBe(19.5);
+    expect(await getBalance(ada.userId)).toBe(18.5);
 
     axios.post.mockResolvedValue(googleOk([placeRow('museum-1', 'Louvre')]));
     const otherQuery = await request(app)
@@ -479,7 +483,7 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(otherQuery.status).toBe(200);
     expect(otherQuery.body[0].placeId).toBe('museum-1');
     expect(placesCalls()).toHaveLength(1);
-    expect(await getBalance(ada.userId)).toBe(19);
+    expect(await getBalance(ada.userId)).toBe(18);
 
     axios.post.mockClear();
     axios.get.mockClear();
@@ -489,7 +493,7 @@ describe('POST /api/plans/:planId/suggest', () => {
       .send({ query: 'quiet cafe', activityType: 'dining', location: 'Rome' });
     expect(otherPlace.status).toBe(200);
     expect(placesCalls()).toHaveLength(1);
-    expect(await getBalance(ada.userId)).toBe(18.5);
+    expect(await getBalance(ada.userId)).toBe(17.5);
 
     axios.post.mockClear();
     axios.get.mockClear();
@@ -500,7 +504,7 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(otherType.status).toBe(200);
     expect(placesCalls()).toHaveLength(1);
     expect(placesCalls()[0][1].includedType).toBe('lodging');
-    expect(await getBalance(ada.userId)).toBe(18);
+    expect(await getBalance(ada.userId)).toBe(17);
 
     axios.post.mockClear();
     axios.get.mockClear();
@@ -513,12 +517,29 @@ describe('POST /api/plans/:planId/suggest', () => {
     expect(expired.status).toBe(200);
     expect(expired.body[0].placeId).toBe(PLACE_ID);
     expect(placesCalls()).toHaveLength(1);
-    expect(await getBalance(ada.userId)).toBe(17.5);
+    expect(await getBalance(ada.userId)).toBe(16.5);
     expect(await AiUsage.countDocuments({
       userId: ada.userId,
       provider: 'google',
       success: true,
-    })).toBe(5);
+    })).toBe(7);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { aiCredits: 0, monthlyCredits: 0, purchasedCredits: 0 } },
+    );
+    axios.post.mockClear();
+    axios.get.mockClear();
+    const broke = await request(app)
+      .post(`/api/plans/${planId}/suggest`)
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send(body);
+    expect(broke.status).toBe(402);
+    expect(broke.body.message).toBe('Insufficient AI credits');
+    expect(broke.body.places).toEqual([]);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(await getBalance(ada.userId)).toBe(0);
 
     axios.post.mockClear();
     axios.get.mockClear();
