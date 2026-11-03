@@ -20,6 +20,7 @@
   </header>
   <main>
     <p id="status" class="request-status" role="status"></p>
+    <p id="subscribe-banner">Subscribe to copy templates and see full reviews.</p>
     <article id="template"></article>
   </main>
   <script>
@@ -27,8 +28,19 @@
       ? 'http://127.0.0.1:3000'
       : 'https://planitvibe.com';
     const status = document.getElementById('status');
+    const banner = document.getElementById('subscribe-banner');
     const root = document.getElementById('template');
     const id = new URLSearchParams(location.search).get('id') || '';
+    const sessionKey = 'planitvibe_token';
+
+    function statLine(template) {
+      const count = Number(template.feedbackCount) || 0;
+      const stars = count > 0
+        ? `${Number(template.averageRating).toFixed(1)} stars`
+        : 'No ratings yet';
+      const used = Number(template.copyCount) || 0;
+      return `${stars} · Used ${used} ${used === 1 ? 'time' : 'times'}`;
+    }
 
     function addText(parent, tag, text) {
       const node = document.createElement(tag);
@@ -43,14 +55,22 @@
         return;
       }
       try {
-        const response = await fetch(`${apiBase}/api/public/templates/${encodeURIComponent(id)}`);
-        const body = await response.json();
+        const token = sessionStorage.getItem(sessionKey) || '';
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await fetch(
+          `${apiBase}/api/public/templates/${encodeURIComponent(id)}`,
+          { headers },
+        );
+        const body = await response.json().catch(() => ({}));
         if (!response.ok || !body.template) {
-          status.textContent = 'Template not found';
+          banner.hidden = true;
+          status.textContent = body.message === 'This template is not currently listed.'
+            ? body.message
+            : 'Template not found';
           return;
         }
         const template = body.template;
-        document.title = `${template.title || 'Template'} · PlanItVibe`;
+        document.title = `${template.title || template.name || 'Template'} · PlanItVibe`;
         if (template.coverImage) {
           const image = document.createElement('img');
           image.className = 'cover';
@@ -58,19 +78,14 @@
           image.src = template.coverImage;
           root.appendChild(image);
         }
-        addText(root, 'h1', template.title || 'Template');
+        addText(root, 'h1', template.title || template.name || 'Template');
         addText(root, 'p', template.description || '');
         addText(
           root,
           'p',
           `${template.city || ''} · ${template.tripLength || ''} days · ${template.vibe || ''}`,
         );
-        addText(root, 'p', `By ${template.creatorName || 'A PlanItVibe member'}`);
-        addText(
-          root,
-          'p',
-          `${template.copyCount || 0} copies · ${template.viewCount || 0} views`,
-        );
+        addText(root, 'p', statLine(template));
         const stops = Array.isArray(template.stops) ? template.stops : [];
         for (const stop of stops) {
           const when = [
@@ -91,7 +106,6 @@
         copyStatus.setAttribute('role', 'status');
         root.appendChild(copyStatus);
 
-        const sessionKey = 'planitvibe_token';
         function apiMessage(data) {
           if (!data) return '';
           return data.msg || data.message || '';
@@ -128,7 +142,7 @@
         copyForm.className = 'stack';
         copyForm.hidden = true;
         const copyName = field(copyForm, 'copy-name', 'Plan name', 'text');
-        copyName.value = template.title || '';
+        copyName.value = template.title || template.name || '';
         const copyStart = field(copyForm, 'copy-start', 'Start date', 'date');
         const copyButton = button(copyForm, 'Copy');
         const signOut = document.createElement('button');
@@ -166,17 +180,55 @@
         const requestButton = button(requestForm, 'Request an invitation');
         root.appendChild(requestForm);
 
+        const reviews = document.createElement('section');
+        root.appendChild(reviews);
+
         function showSignedIn(on) {
           signIn.hidden = on;
           signUp.hidden = on;
           requestForm.hidden = on;
           copyForm.hidden = !on;
         }
+        async function loadReviews() {
+          reviews.replaceChildren();
+          const reviewToken = sessionStorage.getItem(sessionKey) || '';
+          if (!reviewToken) {
+            banner.hidden = false;
+            return;
+          }
+          try {
+            const response = await fetch(
+              `${apiBase}/api/published-templates/${encodeURIComponent(id)}/feedback`,
+              { headers: { Authorization: `Bearer ${reviewToken}` } },
+            );
+            if (!response.ok) {
+              banner.hidden = false;
+              return;
+            }
+            const data = await response.json().catch(() => ({}));
+            banner.hidden = true;
+            addText(reviews, 'h2', 'Reviews');
+            const rows = Array.isArray(data.feedback) ? data.feedback : [];
+            if (!rows.length) {
+              addText(reviews, 'p', 'No reviews yet');
+              return;
+            }
+            for (const row of rows) {
+              addText(reviews, 'p', `${row.rating} stars`);
+              if (row.comment) addText(reviews, 'p', row.comment);
+            }
+          } catch (err) {
+            banner.hidden = false;
+          }
+        }
         showSignedIn(Boolean(sessionStorage.getItem(sessionKey)));
+        loadReviews();
 
         signOut.addEventListener('click', () => {
           sessionStorage.removeItem(sessionKey);
           showSignedIn(false);
+          reviews.replaceChildren();
+          banner.hidden = false;
           copyStatus.textContent = 'Sign in to copy this plan.';
         });
 
@@ -197,6 +249,7 @@
             if (response.ok && data.token) {
               sessionStorage.setItem(sessionKey, data.token);
               showSignedIn(true);
+              loadReviews();
               copyStatus.textContent = 'You are signed in. Copy this plan below.';
               return;
             }
@@ -227,6 +280,7 @@
             if (response.status === 201 && data.token) {
               sessionStorage.setItem(sessionKey, data.token);
               showSignedIn(true);
+              loadReviews();
               copyStatus.textContent = 'Your account is ready. You are back on this template. Copy this plan below.';
               return;
             }

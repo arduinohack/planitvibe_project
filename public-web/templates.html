@@ -22,6 +22,7 @@
   <main>
     <h1>Templates</h1>
     <p>Browse trip plans other people published. Copy one into your own account.</p>
+    <p>Subscribe to copy templates and see full reviews.</p>
     <form id="filters" class="filters">
       <label for="q">Search</label>
       <input id="q" name="q" type="search">
@@ -78,10 +79,12 @@
             card,
             `${template.city || ''} · ${template.tripLength || ''} days · ${template.vibe || ''}`,
           );
-          line(
-            card,
-            `By ${template.creatorName || 'A PlanItVibe member'} · ${template.copyCount || 0} copies`,
-          );
+          const count = Number(template.feedbackCount) || 0;
+          const stars = count > 0
+            ? `${Number(template.averageRating).toFixed(1)} stars`
+            : 'No ratings yet';
+          const used = Number(template.copyCount) || 0;
+          line(card, `${stars} · Used ${used} ${used === 1 ? 'time' : 'times'}`);
           results.appendChild(card);
         }
       } catch (err) {

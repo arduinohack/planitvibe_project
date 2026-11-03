@@ -3,107 +3,110 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PlanItVibe</title>
-  <link rel="icon" href="planitvibe_logo.png">
-  <link rel="stylesheet" href="styles.css">
+  <title>PlanItVibe — A shared trip and event planner</title>
+  <meta name="description" content="PlanItVibe lets you build and reshape group itineraries: insert and reorder stops, track reservations and costs, get Google Maps directions, and let Travelers link their own version of the plan. Start free for 14 days.">
+  <style>
+    :root { --ink: #1a2332; --muted: #5c6b7a; --accent: #0d6e6e; --bg: #f7f5f2; --card: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Georgia, "Iowan Old Style", serif; color: var(--ink); background: var(--bg); line-height: 1.5; }
+    a { color: var(--accent); }
+    header, main, footer { max-width: 920px; margin: 0 auto; padding: 0 1.25rem; }
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; font-family: system-ui, sans-serif; }
+    nav a { text-decoration: none; margin-left: 1rem; }
+    .hero { padding: 2rem 0 2.5rem; }
+    .hero h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 1rem; }
+    .hero p { font-size: 1.15rem; color: var(--muted); max-width: 40rem; }
+    .note { font-size: 0.95rem; color: var(--muted); }
+    .cta { display: inline-block; margin-top: 1.25rem; background: var(--accent); color: #fff; text-decoration: none; padding: 0.75rem 1.25rem; border-radius: 6px; font-family: system-ui, sans-serif; }
+    .cta.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); margin-left: 0.5rem; }
+    section { padding: 1.5rem 0; }
+    h2 { font-size: 1.45rem; margin: 0 0 1rem; }
+    .grid { display: grid; gap: 1rem; }
+    @media (min-width: 700px) { .grid { grid-template-columns: 1fr 1fr; } }
+    article { background: var(--card); padding: 1.1rem 1.2rem; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    article h3 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+    article p { margin: 0; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; background: var(--card); font-family: system-ui, sans-serif; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid #e6e2dc; }
+    th { background: #efeae3; }
+    footer { padding: 2rem 0 3rem; color: var(--muted); font-size: 0.9rem; }
+  </style>
 </head>
 <body>
   <header>
-    <a class="brand" href="#top">
-      <img src="planitvibe_logo.png" alt="" width="48" height="48">
-      <span>PlanItVibe</span>
-    </a>
     <nav>
-      <a href="#features">Features</a>
-      <a href="#pricing">Pricing</a>
-      <a href="templates.html">Templates</a>
-      <a href="docs.html">Docs</a>
-      <a href="#apps">Apps</a>
-      <a href="#invite-request">Request an invitation</a>
+      <a href="#top" id="top"><strong>PlanItVibe</strong></a>
+      <span>
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/library">Library</a>
+      </span>
     </nav>
+    <div class="hero">
+      <h1>Build and reshape the plan as you go.</h1>
+      <p>A shared trip and event planner. Insert activities before or after any stop. Drag to reorder and the timeline adjusts. Keep every reservation and confirmation in one place. Watch estimated and actual costs roll up against your budget. Invite others, then let a Traveler spin off their own linked plan so their party can arrive and leave on their own schedule.</p>
+      <p class="note">Signup is by invitation.</p>
+      <a class="cta" href="#request">Request an invitation</a>
+      <a class="cta secondary" href="/library">Browse successfully rated templates</a>
+    </div>
   </header>
-  <main id="top">
-    <section class="hero">
-      <img src="planitvibe_logo.png" alt="" width="160" height="160">
-      <h1>PlanItVibe</h1>
-      <p>A shared trip and event planner.</p>
-      <p>Signup is by invitation.</p>
-      <form id="invite-request">
-        <label for="invite-name">Name</label>
-        <input id="invite-name" name="name" type="text" autocomplete="name" required>
-        <label for="invite-email">Email</label>
-        <input id="invite-email" name="email" type="email" autocomplete="email" required>
-        <button type="submit">Request an invitation</button>
-        <p id="invite-request-status" class="request-status" role="status"></p>
-      </form>
-    </section>
+  <main>
     <section id="features">
       <h2>Features</h2>
-      <ul>
-        <li>Plans for trips and events</li>
-        <li>Roles</li>
-        <li>Invites</li>
-        <li>The itinerary</li>
-        <li>Linked personal plans</li>
-        <li>Maps</li>
-        <li>Print</li>
-      </ul>
+      <div class="grid">
+        <article>
+          <h3>Shape the itinerary</h3>
+          <p>Add a stop, insert one before or after another, or drag activities into a new order. The timeline shifts with you. Tighten a day or add buffer when the gaps feel wrong.</p>
+        </article>
+        <article>
+          <h3>Reservations and money</h3>
+          <p>Store booking and confirmation details on each activity. Track estimated or actual cost per stop. See the running total against the plan budget so you know where you stand.</p>
+        </article>
+        <article>
+          <h3>Real places and directions</h3>
+          <p>Search with Google Places and drop a real location into the plan. The Place ID feeds Google Maps so anyone can get driving directions to the next stop.</p>
+        </article>
+        <article>
+          <h3>Roles, invites, and linked plans</h3>
+          <p>Invite Co-Planners and Travelers. Vote on ideas. When a Traveler needs their own timing, they link the plan and become the planner of their copy. Their party can join the trip late or leave early while the original plan stays intact.</p>
+        </article>
+        <article>
+          <h3>Templates</h3>
+          <p>Save a plan as a template. Publish it for others. Browse the Library for successfully rated templates and start from one instead of a blank page.</p>
+        </article>
+        <article>
+          <h3>AI when you want it</h3>
+          <p>Ask for a kid-friendly stop near the hotel and get a ready-to-apply suggestion with a real place. Use monthly credits or bring your own key.</p>
+        </article>
+      </div>
     </section>
     <section id="pricing">
       <h2>Pricing</h2>
-      <p>Pricing is coming.</p>
+      <table>
+        <thead>
+          <tr><th></th><th>Trial</th><th>PlanItVibe</th><th>Plus</th><th>Pro</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Price</td><td>Free 14 days</td><td>$5/mo</td><td>$10/mo</td><td>$25/mo</td></tr>
+          <tr><td>Plans</td><td>2</td><td>4</td><td>12</td><td>40</td></tr>
+          <tr><td>Best for</td><td>Trying it</td><td>Personal</td><td>Family & friends</td><td>Agents & planners</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:0.75rem">After the trial, plans stay readable. Editing and new plans require a subscription.</p>
+    </section>
+    <section id="request">
+      <h2>Request an invitation</h2>
+      <p>Signup is by invitation. Use the request form in the app, or open the app and choose “No invitation yet?”</p>
+      <a class="cta" href="/#/login">Open the app</a>
     </section>
     <section id="apps">
       <h2>Apps</h2>
-      <div class="apps">
-        <div>
-          <h3>Android</h3>
-          <p>Coming soon.</p>
-        </div>
-        <div>
-          <h3>iOS</h3>
-          <p>Coming soon.</p>
-        </div>
-      </div>
+      <p>Android: Coming soon.</p>
+      <p>iOS: Coming soon.</p>
     </section>
   </main>
-  <script>
-    const inviteRequestUrl = 'https://planitvibe.com/api/auth/request-invite';
-    const inviteForm = document.getElementById('invite-request');
-    const inviteStatus = document.getElementById('invite-request-status');
-
-    inviteForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const formData = new FormData(inviteForm);
-      const name = String(formData.get('name') || '').trim();
-      const email = String(formData.get('email') || '').trim();
-      const button = inviteForm.querySelector('button');
-      inviteStatus.textContent = '';
-      button.disabled = true;
-      try {
-        const response = await fetch(inviteRequestUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (response.ok && data.exists === true) {
-          window.location.assign('https://planitvibe.com');
-          return;
-        }
-        if (response.ok && data.exists === false) {
-          inviteForm.reset();
-          inviteStatus.textContent = 'The request was received.';
-          return;
-        }
-        const message = data && (data.msg || data.message);
-        inviteStatus.textContent = message || 'The request was not sent.';
-      } catch (err) {
-        inviteStatus.textContent = 'The request was not sent.';
-      } finally {
-        button.disabled = false;
-      }
-    });
-  </script>
+  <footer>
+    PlanItVibe — a shared trip and event planner.
+  </footer>
 </body>
 </html>
