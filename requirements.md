@@ -1,7 +1,7 @@
-# WanderVibe application requirements
+# PlanItVibe application requirements
 
 Source of truth for Grok Build CLI and Git.  
-Word review copy: `WanderVibe-requirements.docx` (comments stay there until each item is closed).  
+Word review copy: `PlanItVibe-requirements.docx` (comments stay there until each item is closed).  
 Historical only: `reuirements.md` (5 October 2025 snapshot).
 
 This file was rebuilt 28 September 2026 from the 25 September Word snapshot, plus section 12 (app configuration) and locked naming/role decisions from 25–26 September.
@@ -10,7 +10,7 @@ This file was rebuilt 28 September 2026 from the 25 September Word snapshot, plu
 
 ## 1. Product
 
-WanderVibe is a collaborative planning app for trips and other occasions (conference, wedding weekend, reunion). People share one plan, an itinerary of timed activities, and roles.
+PlanItVibe is a collaborative planning app for trips and other occasions (conference, wedding weekend, reunion). People share one plan, an itinerary of timed activities, and roles.
 
 The live API and models use **plan**, not trip: `/api/plans`, `Plan`, `PlanUser`.
 
@@ -416,7 +416,7 @@ Empty is not a crash by itself. Each variable has a fallback or a hard requireme
 A line looks like `NAME=value` with no spaces around the equals sign. Text after `#` is a comment. Values with spaces should be quoted. Example:
 
 ```bash
-EMAIL_FROM=WanderVibe <noreply@mail.eratespecialists.com>
+EMAIL_FROM=PlanItVibe <noreply@mail.eratespecialists.com>
 NODE_ENV=development
 # this line is ignored
 ```
@@ -462,7 +462,7 @@ JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=30d
 REDIS_URL=redis://127.0.0.1:6379
 EMAIL_PROVIDER=resend
-EMAIL_FROM=WanderVibe <noreply@mail.eratespecialists.com>
+EMAIL_FROM=PlanItVibe <noreply@mail.eratespecialists.com>
 NOTIFY_OVERRIDE_EMAIL=w.ken.allen@gmail.com
 RESEND_API_KEY=<resend key>
 SENDGRID_API_KEY=<still needed for forgot-password until that path is switched>
@@ -491,7 +491,7 @@ Invite URL is `POST /api/plans/:planId/invite` only. Retired path is `POST /api/
 
 ## Open items (Word comments)
 
-Comments remain in `WanderVibe-requirements.docx` until closed. Do not implement a comment until its rule is locked here.
+Comments remain in `PlanItVibe-requirements.docx` until closed. Do not implement a comment until its rule is locked here.
 
 | # | Status | Topic | Note |
 |---|---|---|---|

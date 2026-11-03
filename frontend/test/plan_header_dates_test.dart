@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/activity.dart';
-import 'package:wandervibe_frontend/models/plan.dart';
+import 'package:planitvibe_frontend/models/activity.dart';
+import 'package:planitvibe_frontend/models/plan.dart';
 
 Activity _activity({DateTime? start, DateTime? end}) {
   return Activity(

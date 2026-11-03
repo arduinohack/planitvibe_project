@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'activity_attachment.dart';
 
 const attachmentCacheFolder = 'attachments';
-const attachmentCachePrefsKey = 'wandervibe.attachmentFiles';
+const attachmentCachePrefsKey = 'planitvibe.attachmentFiles';
 
 const _extensionByMime = {
   'image/jpeg': 'jpg',

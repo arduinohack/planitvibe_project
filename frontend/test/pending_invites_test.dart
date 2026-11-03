@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/providers/invitation_provider.dart';
+import 'package:planitvibe_frontend/providers/invitation_provider.dart';
 
 void main() {
   test('an empty pending array stays on the plan list', () {

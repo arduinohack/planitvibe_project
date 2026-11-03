@@ -9,7 +9,7 @@ describe('selectedFrom', () => {
   });
 
   test('uses PlanItVibe when EMAIL_FROM has a display name', () => {
-    process.env.EMAIL_FROM = 'WanderVibe <mail@mail.eratespecialists.com>';
+    process.env.EMAIL_FROM = 'Planner <mail@mail.eratespecialists.com>';
     expect(selectedFrom()).toBe('PlanItVibe <mail@mail.eratespecialists.com>');
   });
 
@@ -23,10 +23,10 @@ describe('selectedFrom', () => {
     expect(selectedFrom()).toBe('PlanItVibe <ken@eratespecialists.com>');
   });
 
-  test('does not send WanderVibe as the sender name', () => {
-    process.env.EMAIL_FROM = '"WanderVibe" <noreply@mail.eratespecialists.com>';
+  test('does not send the EMAIL_FROM display name', () => {
+    process.env.EMAIL_FROM = '"Planner" <noreply@mail.eratespecialists.com>';
     const from = selectedFrom();
     expect(from).toBe('PlanItVibe <noreply@mail.eratespecialists.com>');
-    expect(from).not.toMatch(/WanderVibe/);
+    expect(from).not.toMatch(/Planner/);
   });
 });

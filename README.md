@@ -1,4 +1,4 @@
-# WanderVibe App
+# PlanItVibe App
 
 A collaborative trip planning tool with roles, time zones, and notifications.
 

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/plan.dart';
-import 'package:wandervibe_frontend/utils/activity_time.dart';
+import 'package:planitvibe_frontend/models/plan.dart';
+import 'package:planitvibe_frontend/utils/activity_time.dart';
 
 void main() {
   test('the first activity date is day 1 and six days later is day 7', () {

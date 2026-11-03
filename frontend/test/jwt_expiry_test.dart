@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/jwt_expiry.dart';
+import 'package:planitvibe_frontend/utils/jwt_expiry.dart';
 
 String _tokenWithPayload(Map<String, Object> payload) {
   String part(String jsonText) {

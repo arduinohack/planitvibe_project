@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/plan_access.dart';
+import 'package:planitvibe_frontend/models/plan_access.dart';
 
 void main() {
   test('trial label rounds the remaining time up to a whole day', () {

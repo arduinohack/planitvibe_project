@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/activity.dart';
-import 'package:wandervibe_frontend/models/plan.dart';
-import 'package:wandervibe_frontend/screens/plan_detail_screen.dart';
+import 'package:planitvibe_frontend/models/activity.dart';
+import 'package:planitvibe_frontend/models/plan.dart';
+import 'package:planitvibe_frontend/screens/plan_detail_screen.dart';
 
 Activity _row({
   required String name,

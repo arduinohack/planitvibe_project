@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/plan_member.dart';
-import 'package:wandervibe_frontend/models/plan_role_label.dart';
+import 'package:planitvibe_frontend/models/plan_member.dart';
+import 'package:planitvibe_frontend/models/plan_role_label.dart';
 
 void main() {
   test('Owner can send Collaborator and Guest; Collaborator can send Guest', () {

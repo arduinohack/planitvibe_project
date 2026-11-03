@@ -59,7 +59,7 @@ describe('browser CORS', () => {
 
     const noOrigin = await request(app).get('/');
     expect(noOrigin.status).toBe(200);
-    expect(noOrigin.text).toContain('WanderVibe Backend is running');
+    expect(noOrigin.text).toContain('PlanItVibe Backend is running');
     expect(noOrigin.headers['access-control-allow-origin']).toBeUndefined();
   });
 

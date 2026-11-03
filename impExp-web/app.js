@@ -1,5 +1,5 @@
-const TOKEN_KEY = 'wandervibe.import.token';
-const USER_KEY = 'wandervibe.import.userId';
+const TOKEN_KEY = 'planitvibe.import.token';
+const USER_KEY = 'planitvibe.import.userId';
 const DEFAULT_API = 'http://localhost:3000';
 
 const emailInput = document.getElementById('email');
@@ -37,7 +37,7 @@ const exportMessage = document.getElementById('export-message');
 let chosenFields = [];
 
 function apiBase() {
-  const configured = window.WANDERVIBE_API_BASE;
+  const configured = window.PLANITVIBE_API_BASE;
   const value = typeof configured === 'string' ? configured.trim() : '';
   return value.replace(/\/+$/, '') || DEFAULT_API;
 }

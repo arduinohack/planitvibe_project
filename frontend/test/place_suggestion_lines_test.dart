@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/place_suggestion_lines.dart';
+import 'package:planitvibe_frontend/utils/place_suggestion_lines.dart';
 
 void main() {
   test('a result shows the address and summary', () {

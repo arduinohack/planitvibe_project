@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/itinerary_warning.dart';
+import 'package:planitvibe_frontend/utils/itinerary_warning.dart';
 
 void main() {
   test('overlap and tight travel labels stay short', () {

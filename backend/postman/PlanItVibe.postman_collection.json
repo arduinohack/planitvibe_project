@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "WanderVibe",
+    "name": "PlanItVibe",
     "description": "Live /api/plans and /api/invites flow. Run the collection in order against a server that is already listening.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -39,7 +39,7 @@
             "exec": [
               "pm.test('health is running', function () {",
               "  pm.response.to.have.status(200);",
-              "  pm.expect(pm.response.text()).to.include('WanderVibe Backend is running');",
+              "  pm.expect(pm.response.text()).to.include('PlanItVibe Backend is running');",
               "});"
             ]
           }

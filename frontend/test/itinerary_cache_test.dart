@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/activity.dart';
-import 'package:wandervibe_frontend/models/activity_type.dart';
-import 'package:wandervibe_frontend/models/plan.dart';
-import 'package:wandervibe_frontend/utils/itinerary_cache.dart';
-import 'package:wandervibe_frontend/utils/itinerary_cache_store.dart';
+import 'package:planitvibe_frontend/models/activity.dart';
+import 'package:planitvibe_frontend/models/activity_type.dart';
+import 'package:planitvibe_frontend/models/plan.dart';
+import 'package:planitvibe_frontend/utils/itinerary_cache.dart';
+import 'package:planitvibe_frontend/utils/itinerary_cache_store.dart';
 
 void main() {
   test('the cache is only for Android and iOS', () {

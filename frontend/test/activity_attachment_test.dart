@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/activity_attachment.dart';
-import 'package:wandervibe_frontend/utils/activity_attachment.dart';
+import 'package:planitvibe_frontend/models/activity_attachment.dart';
+import 'package:planitvibe_frontend/utils/activity_attachment.dart';
 
 void main() {
   test('sizes use B, KB, and MB', () {

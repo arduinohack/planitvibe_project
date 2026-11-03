@@ -36,7 +36,7 @@ function readApiBase() {
 }
 
 function injectApiBase(html) {
-  const script = `<script>window.WANDERVIBE_API_BASE = ${JSON.stringify(readApiBase())};</script>`;
+  const script = `<script>window.PLANITVIBE_API_BASE = ${JSON.stringify(readApiBase())};</script>`;
   const marker = '<script src="app.js"></script>';
   if (html.includes(marker)) return html.replace(marker, `${script}\n  ${marker}`);
   return `${html}\n${script}`;

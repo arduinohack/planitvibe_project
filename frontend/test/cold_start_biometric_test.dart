@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/biometric_unlock.dart';
+import 'package:planitvibe_frontend/biometric_unlock.dart';
 
 void main() {
   test('cold start prompts only when mobile, enabled, and a refresh token exists', () {

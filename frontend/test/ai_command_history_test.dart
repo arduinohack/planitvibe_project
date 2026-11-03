@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/ai_command_history.dart';
+import 'package:planitvibe_frontend/utils/ai_command_history.dart';
 
 void main() {
   test('the sheet keeps the last 5 instructions and their summaries', () {

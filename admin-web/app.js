@@ -1,9 +1,9 @@
 const API = 'https://planitvibe.com';
-const TOKEN_KEY = 'wandervibeAdminToken';
-const USER_KEY = 'wandervibeAdminUser';
-const ZONE_KEY = 'wandervibe.admin.timeZone';
-const DELAY_KEY = 'wandervibe.admin.searchDelaySec';
-const STYLES_KEY = 'wandervibe.admin.styles';
+const TOKEN_KEY = 'planitvibeAdminToken';
+const USER_KEY = 'planitvibeAdminUser';
+const ZONE_KEY = 'planitvibe.admin.timeZone';
+const DELAY_KEY = 'planitvibe.admin.searchDelaySec';
+const STYLES_KEY = 'planitvibe.admin.styles';
 const STYLE_TYPES = ['banner', 'heading', 'label', 'input', 'button', 'table', 'error'];
 const STYLE_FONTS = ['system-ui', 'Georgia', 'Times New Roman', 'Arial', 'Verdana', 'Consolas'];
 const STYLE_LABELS = {

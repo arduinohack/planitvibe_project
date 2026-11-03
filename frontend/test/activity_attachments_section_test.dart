@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/models/activity_attachment.dart';
-import 'package:wandervibe_frontend/utils/activity_attachment.dart';
-import 'package:wandervibe_frontend/utils/attachment_cache.dart';
-import 'package:wandervibe_frontend/utils/attachment_picker.dart';
-import 'package:wandervibe_frontend/widgets/activity_attachments.dart';
+import 'package:planitvibe_frontend/models/activity_attachment.dart';
+import 'package:planitvibe_frontend/utils/activity_attachment.dart';
+import 'package:planitvibe_frontend/utils/attachment_cache.dart';
+import 'package:planitvibe_frontend/utils/attachment_picker.dart';
+import 'package:planitvibe_frontend/widgets/activity_attachments.dart';
 
 const _png =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';

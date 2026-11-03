@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/place_suggestion_fill.dart';
+import 'package:planitvibe_frontend/utils/place_suggestion_fill.dart';
 
 void main() {
   test('a selected place fills the name, address, place id, and summary', () {

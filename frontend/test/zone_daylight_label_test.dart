@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/activity_time.dart';
+import 'package:planitvibe_frontend/utils/activity_time.dart';
 
 void main() {
   test('a zone label follows daylight time for that date', () {

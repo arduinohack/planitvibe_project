@@ -1,4 +1,4 @@
-package com.example.wandervibe_frontend
+package com.example.planitvibe_frontend
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

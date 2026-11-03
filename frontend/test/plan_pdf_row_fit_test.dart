@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/plan_pdf.dart';
+import 'package:planitvibe_frontend/utils/plan_pdf.dart';
 
 void main() {
   test('activity rows are 8-point, clocks stay tight, and cost and type fit', () async {
@@ -139,8 +139,8 @@ void main() {
     expect(page.literals, contains('Cost(est):'));
     expect(page.literals.where((text) => text == 'A12'), ['A12']);
     expect(page.literals.where((text) => text == 'Gate'), ['Gate']);
-    expect(page.literals, contains('Booking'));
-    expect(page.literals, contains('reference'));
+    expect(page.literals, isNot(contains('AB12')));
+    expect(page.literals, isNot(contains('Booking')));
     expect(page.columnWidthsOf('Gate'), hasLength(1));
     expect(page.columnWidthsOf('Duration'), hasLength(1));
     expect(page.columnWidthsOf('Name'), hasLength(2));
@@ -148,7 +148,7 @@ void main() {
     expect(page.columnWidthOf('Details'), greaterThan(page.columnWidthOf('Start')));
     expect(
       page.columnWidthOf('Details'),
-      greaterThan(page.columnWidthOf('Booking')),
+      greaterThan(page.columnWidthOf('Gate')),
     );
   });
 

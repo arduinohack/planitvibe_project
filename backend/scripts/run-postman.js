@@ -7,8 +7,8 @@ const dotenv = require('dotenv');
 
 const root = path.join(__dirname, '..');
 dotenv.config({ path: path.join(root, '.env') });
-const environmentPath = path.join(root, 'postman', 'WanderVibe.local.postman_environment.json');
-const collectionPath = path.join(root, 'postman', 'WanderVibe.postman_collection.json');
+const environmentPath = path.join(root, 'postman', 'PlanItVibe.local.postman_environment.json');
+const collectionPath = path.join(root, 'postman', 'PlanItVibe.postman_collection.json');
 
 function envValue(name) {
   const value = process.env[name];

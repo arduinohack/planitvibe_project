@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:wandervibe_frontend/providers/user_provider.dart';
-import 'package:wandervibe_frontend/screens/login_screen.dart';
+import 'package:planitvibe_frontend/providers/user_provider.dart';
+import 'package:planitvibe_frontend/screens/login_screen.dart';
 
 void main() {
   testWidgets('the login password starts hidden and the icon toggles it', (

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wandervibe_frontend/utils/attachment_cache.dart';
+import 'package:planitvibe_frontend/utils/attachment_cache.dart';
 
 void main() {
   test('a viewed file is named from the attachment id and type', () {

@@ -108,7 +108,7 @@ app.get('/api/protected', authMiddleware, (req, res) => {
 
 // Basic root route (health check)
 app.get('/', (req, res) => {
-  res.send('WanderVibe Backend is running!');
+  res.send('PlanItVibe Backend is running!');
 });
 
 module.exports = app;

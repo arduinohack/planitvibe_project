@@ -36,7 +36,7 @@ describe('sendSms', () => {
   test('console logs the destination and body length and does not call the network', async () => {
     process.env.TEXTBELT_KEY = 'fake-key';
 
-    await sendSms({ to: '5551234567', body: 'Hello from WanderVibe' });
+    await sendSms({ to: '5551234567', body: 'Hello from PlanItVibe' });
 
     expect(global.fetch).not.toHaveBeenCalled();
     expect(loggedText()).toContain('to +15551234567');
