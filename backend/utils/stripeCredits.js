@@ -410,6 +410,7 @@ async function markPlus({
   periodEnd,
   active,
   tier,
+  status,
   setSubscribedAt,
   allowLower,
 }) {
@@ -431,6 +432,11 @@ async function markPlus({
   const update = {};
   const unset = {};
   if (typeof active === 'boolean') update.plusActive = active;
+  if (active === true) {
+    update.subscriptionStatus = status === 'trialing' ? 'trialing' : 'active';
+  } else if (active === false && status) {
+    update.subscriptionStatus = status;
+  }
   if (tier) update.tier = tier;
   if (customerId) update.stripeCustomerId = customerId;
   if (subscriptionId) update.stripeSubscriptionId = subscriptionId;
@@ -579,6 +585,7 @@ async function applyPlusSubscription(event) {
           $set: {
             plusActive: false,
             tier: 'trial',
+            subscriptionStatus: status || 'canceled',
             expiredAt: subscriptionEndedAt(subscription),
           },
         },
@@ -594,6 +601,7 @@ async function applyPlusSubscription(event) {
       priceId,
       periodEnd: unixDate(subscription.current_period_end),
       active: true,
+      status,
       tier,
     });
   });

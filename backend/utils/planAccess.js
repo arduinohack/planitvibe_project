@@ -4,6 +4,9 @@ const { addMonthly } = require('./aiCredits');
 const { notArchivedFilter } = require('./planArchive');
 const {
   UPGRADE_MESSAGE,
+  TIER_PLANITVIBE,
+  TIER_PLUS,
+  TIER_PRO,
   planCapFor,
   resolveTier,
   tierName,
@@ -20,7 +23,7 @@ const EXPORT_MESSAGE = 'Upgrade to Plus to export.';
 const EDIT_MESSAGE = 'Upgrade to Plus to edit this plan.';
 const AI_MESSAGE = 'Upgrade to Plus to use AI.';
 const ATTACH_MESSAGE = 'Upgrade to Plus to add a file.';
-const EXCESS_MESSAGE = 'This plan is read-only on the free trial. Upgrade to Plus to edit it.';
+const EXCESS_MESSAGE = 'This plan is read-only on the free trial. Upgrade to PlanItVibe to edit it.';
 const VERIFY_EMAIL_MESSAGE = 'Verify your email before creating a plan.';
 
 function userIdOf(value) {
@@ -30,6 +33,17 @@ function userIdOf(value) {
 
 function isPlus(user) {
   return resolveTier(user) !== 'trial';
+}
+
+// Any current PlanItVibe, Plus, or Pro subscription. plusActive alone does not count.
+function hasActivePaidSubscription(user) {
+  if (!user) return false;
+  const tier = typeof user.tier === 'string' ? user.tier.trim() : '';
+  if (tier !== TIER_PLANITVIBE && tier !== TIER_PLUS && tier !== TIER_PRO) return false;
+  const status = typeof user.subscriptionStatus === 'string'
+    ? user.subscriptionStatus.trim()
+    : '';
+  return status === 'active' || status === 'trialing';
 }
 
 function trialIsActive(user, now = new Date()) {
@@ -78,7 +92,8 @@ function createdAtMillis(value) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-// Active trial only. Plus, a paid tier, and an expired trial are not excess.
+// Active trial only. An active or trialing PlanItVibe, Plus, or Pro
+// subscription is not excess. An expired trial is not excess either.
 // Archived plans are omitted, matching the owned-plan cap. The first two by
 // createdAt stay editable. Every later owned plan is read-only.
 async function excessPlanIds(ownerIds) {
@@ -86,11 +101,11 @@ async function excessPlanIds(ownerIds) {
   const excess = new Set();
   if (!ids.length) return excess;
   const users = await User.find({ _id: { $in: ids } })
-    .select('plusActive tier trialStartedAt trialEndsAt')
+    .select('tier trialStartedAt trialEndsAt subscriptionStatus')
     .lean();
   const trialOwnerIds = [];
   for (const user of users) {
-    if (isPlus(user) || !trialIsActive(user)) continue;
+    if (hasActivePaidSubscription(user) || !trialIsActive(user)) continue;
     trialOwnerIds.push(String(user._id));
   }
   if (!trialOwnerIds.length) return excess;
@@ -278,6 +293,7 @@ module.exports = {
   EXCESS_MESSAGE,
   VERIFY_EMAIL_MESSAGE,
   excessPlanIds,
+  hasActivePaidSubscription,
   accessSummary,
   preparePlanCreate,
   preparePlanRecall,

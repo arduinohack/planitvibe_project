@@ -303,7 +303,10 @@ describe('free-owner trial and Plus gating', () => {
 
   test('Plus can create, delete, and export', async () => {
     const ada = await registerAndLogin('ada-plus-open@example.com');
-    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: true, tier: 'plus', subscriptionStatus: 'active' } },
+    );
     const names = ['Paris', 'Lyon', 'Nice'];
     const ids = [];
     for (const name of names) {
@@ -711,20 +714,71 @@ describe('free-owner trial and Plus gating', () => {
     const olderAllowed = await postActivity(grace.token, olderIds[0], 'Grace on Paris');
     expect(olderAllowed.status).toBe(201);
 
-    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
-    const plusAdd = await postActivity(ada.token, newestId, 'Plus dinner');
-    expect(plusAdd.status).toBe(201);
-    const plusEdit = await request(app)
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: true, tier: 'trial', subscriptionStatus: '' } },
+    );
+    const flagOnly = await postActivity(ada.token, newestId, 'Flag dinner');
+    expect(flagOnly.status).toBe(402);
+    expect(flagOnly.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Event.countDocuments({ planId: newestId, name: 'Flag dinner' })).toBe(0);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: false, tier: 'planitvibe', subscriptionStatus: 'canceled' } },
+    );
+    const canceled = await postActivity(ada.token, newestId, 'Canceled dinner');
+    expect(canceled.status).toBe(402);
+    expect(canceled.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Event.countDocuments({ planId: newestId, name: 'Canceled dinner' })).toBe(0);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: true, tier: 'planitvibe', subscriptionStatus: 'active' } },
+    );
+    const planitvibeNewest = await postActivity(ada.token, newestId, 'PlanItVibe dinner');
+    expect(planitvibeNewest.status).toBe(201);
+    const planitvibeFirst = await postActivity(ada.token, olderIds[0], 'PlanItVibe Paris');
+    expect(planitvibeFirst.status).toBe(201);
+    const planitvibeSecond = await postActivity(ada.token, olderIds[1], 'PlanItVibe Lyon');
+    expect(planitvibeSecond.status).toBe(201);
+    const planitvibeEdit = await request(app)
       .put(`/api/plans/${newestId}`)
       .set(bearer(ada.token))
-      .send({ name: 'Nice plus' });
-    expect(plusEdit.status).toBe(200);
-    expect(plusEdit.body.plan.name).toBe('Nice plus');
-    const plusOlder = await postActivity(ada.token, olderIds[1], 'Plus Lyon');
-    expect(plusOlder.status).toBe(201);
-    const unlocked = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
-    expect(unlocked.status).toBe(200);
-    expect(unlocked.body.plan.trialReadOnly).toBe(false);
+      .send({ name: 'Nice planitvibe' });
+    expect(planitvibeEdit.status).toBe(200);
+    expect(planitvibeEdit.body.plan.name).toBe('Nice planitvibe');
+    const planitvibeOpen = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
+    expect(planitvibeOpen.status).toBe(200);
+    expect(planitvibeOpen.body.plan.trialReadOnly).toBe(false);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: true, tier: 'plus', subscriptionStatus: 'active' } },
+    );
+    const plusAdd = await postActivity(ada.token, newestId, 'Plus dinner');
+    expect(plusAdd.status).toBe(201);
+    const plusFirst = await postActivity(ada.token, olderIds[0], 'Plus Paris');
+    expect(plusFirst.status).toBe(201);
+    const plusSecond = await postActivity(ada.token, olderIds[1], 'Plus Lyon');
+    expect(plusSecond.status).toBe(201);
+    const plusOpen = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
+    expect(plusOpen.status).toBe(200);
+    expect(plusOpen.body.plan.trialReadOnly).toBe(false);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { plusActive: true, tier: 'pro', subscriptionStatus: 'trialing' } },
+    );
+    const proAdd = await postActivity(ada.token, newestId, 'Pro dinner');
+    expect(proAdd.status).toBe(201);
+    const proFirst = await postActivity(ada.token, olderIds[0], 'Pro Paris');
+    expect(proFirst.status).toBe(201);
+    const proSecond = await postActivity(ada.token, olderIds[1], 'Pro Lyon');
+    expect(proSecond.status).toBe(201);
+    const proOpen = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
+    expect(proOpen.status).toBe(200);
+    expect(proOpen.body.plan.trialReadOnly).toBe(false);
   });
 
   test('an ended trial still uses the existing edit message on a newer plan', async () => {

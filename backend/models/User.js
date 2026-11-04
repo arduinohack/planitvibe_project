@@ -49,6 +49,9 @@ const userSchema = new mongoose.Schema({
   // Credit packs. A renewal does not change this.
   purchasedCredits: { type: Number, default: 0, min: 0 },
   plusActive: { type: Boolean, default: false },
+  // Stripe subscription.status. Excess trial plans unlock when this is
+  // active or trialing and tier is planitvibe, plus, or pro.
+  subscriptionStatus: { type: String, default: '' },
   tier: {
     type: String,
     enum: ['trial', 'planitvibe', 'plus', 'pro'],
