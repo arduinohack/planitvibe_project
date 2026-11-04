@@ -48,6 +48,7 @@ const {
   prepareExport,
   prepareEdit,
   prepareAi,
+  excessPlanIds,
 } = require('../utils/planAccess');
 const {
   archivedPlanGuard,
@@ -195,6 +196,10 @@ router.get('/', authMiddleware, async (req, res) => {
       obj.latestEnd = span.latestEnd;
       return obj;
     });
+    const excess = await excessPlanIds(payload.map((plan) => plan.ownerId));
+    for (const plan of payload) {
+      plan.trialReadOnly = excess.has(String(plan._id));
+    }
     res.status(200).json({ plans: payload });
   } catch (error) {
     console.error('Fetch plans error:', error);
@@ -215,7 +220,10 @@ router.get('/:planId', authMiddleware, async (req, res) => {
     if (!role) {
       return res.status(403).json({ message: 'Not authorized to read plan' });
     }
-    return res.json({ plan });
+    const payload = typeof plan.toJSON === 'function' ? plan.toJSON() : plan;
+    const excess = await excessPlanIds([payload.ownerId]);
+    payload.trialReadOnly = excess.has(String(payload._id));
+    return res.json({ plan: payload });
   } catch (err) {
     console.error('Get plan error:', err);
     return res.status(500).json({ message: 'Server error' });
@@ -1261,7 +1269,7 @@ router.post('/:planId/suggest', authMiddleware, async (req, res) => {
       const message = err && err.message ? err.message : 'request failed';
       console.error('Place suggest AI client failed:', message);
     }
-    const gate = await prepareAi(callerId, aiClient);
+    const gate = await prepareAi(callerId, aiClient, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1320,7 +1328,7 @@ router.post('/:planId/optimize-day', authMiddleware, async (req, res) => {
     if (role !== 'Owner' && role !== 'Collaborator') {
       return res.status(403).json({ message: OPTIMIZE_ROLE });
     }
-    const gate = await prepareEdit(callerId);
+    const gate = await prepareEdit(callerId, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1349,7 +1357,7 @@ router.post('/:planId/optimize-day/apply', authMiddleware, async (req, res) => {
     if (role !== 'Owner' && role !== 'Collaborator') {
       return res.status(403).json({ message: OPTIMIZE_ROLE });
     }
-    const gate = await prepareEdit(callerId);
+    const gate = await prepareEdit(callerId, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1406,7 +1414,7 @@ router.post('/:planId/ai-command', authMiddleware, async (req, res) => {
       const message = err && err.message ? err.message : 'request failed';
       console.error('AI command client failed:', message);
     }
-    const gate = await prepareAi(callerId, aiClient);
+    const gate = await prepareAi(callerId, aiClient, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1442,7 +1450,7 @@ router.post('/:planId/ai-command/apply', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: AI_EDIT_ROLE });
     }
 
-    const gate = await prepareEdit(callerId);
+    const gate = await prepareEdit(callerId, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1477,7 +1485,7 @@ router.put('/:planId', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only Owner or Collaborator can edit a plan' });
     }
 
-    const gate = await prepareEdit(callerId);
+    const gate = await prepareEdit(callerId, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -1772,7 +1780,7 @@ router.delete('/:planId', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'Only the Owner can delete a plan' });
     }
 
-    const gate = await preparePlanDelete(callerId);
+    const gate = await preparePlanDelete(callerId, planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }

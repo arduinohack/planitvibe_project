@@ -56,8 +56,8 @@ async function callerMayEditActivities(planId, callerId) {
   return role === 'Owner' || role === 'Collaborator';
 }
 
-async function editGate(callerId) {
-  const gate = await prepareEdit(callerId);
+async function editGate(callerId, planId) {
+  const gate = await prepareEdit(callerId, planId);
   if (gate.status === 200) return null;
   return { status: gate.status, body: { message: gate.message } };
 }
@@ -160,7 +160,7 @@ async function createActivity(callerId, body) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, planId);
     if (blocked) return blocked;
 
     const insertAfterId = textId(body, 'insertAfter');
@@ -256,7 +256,7 @@ router.put('/order', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, planId);
     if (blocked) return res.status(blocked.status).json(blocked.body);
     const [plan, rows] = await Promise.all([
       Plan.findById(planId).select('sourcePlanId linkedActivityIds').lean(),
@@ -426,7 +426,7 @@ router.post('/:id/poll', authMiddleware, async (req, res) => {
         message: 'Only Owner or Collaborator can add a poll',
       });
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, loaded.event.planId);
     if (blocked) return res.status(blocked.status).json(blocked.body);
     await Event.updateOne({ _id: loaded.event._id }, { $set: { poll: true } });
     return res.json({ poll: true });
@@ -487,7 +487,7 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, planId);
     if (blocked) return res.status(blocked.status).json(blocked.body);
     if (event && String(revision.planId) !== String(event.planId)) {
       return res.status(400).json({ message: 'Revision does not belong to this activity' });
@@ -552,7 +552,7 @@ router.put('/:id/move', authMiddleware, async (req, res) => {
     if (!allowed) {
       return res.status(403).json({ message: 'Only Owner or Collaborator can change activities' });
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, planId);
     if (blocked) return res.status(blocked.status).json(blocked.body);
     const bodyPlanId = textId(req.body, 'planId');
     if (bodyPlanId && bodyPlanId !== String(planId)) {
@@ -594,7 +594,7 @@ async function updateActivity(callerId, activityId, body) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, event.planId);
     if (blocked) return blocked;
 
     const source = body || {};
@@ -687,7 +687,7 @@ async function deleteActivity(callerId, activityId) {
         body: { message: 'Only Owner or Collaborator can change activities' },
       };
     }
-    const blocked = await editGate(callerId);
+    const blocked = await editGate(callerId, event.planId);
     if (blocked) return blocked;
 
     const planId = event.planId;

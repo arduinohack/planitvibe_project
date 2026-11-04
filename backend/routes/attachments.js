@@ -100,7 +100,7 @@ activityAttachmentRouter.post('/:id/attachments', authMiddleware, async (req, re
         message: 'Only Owner or Collaborator can add attachments',
       });
     }
-    const gate = await prepareAttachment(callerId);
+    const gate = await prepareAttachment(callerId, activity.planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }
@@ -253,7 +253,7 @@ attachmentRouter.delete('/:id', authMiddleware, async (req, res) => {
         message: 'Only the uploader or the Owner can delete an attachment',
       });
     }
-    const gate = await prepareEdit(callerId);
+    const gate = await prepareEdit(callerId, attachment.planId);
     if (gate.status !== 200) {
       return res.status(gate.status).json({ message: gate.message });
     }

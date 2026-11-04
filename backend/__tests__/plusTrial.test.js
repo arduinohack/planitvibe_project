@@ -18,6 +18,7 @@ const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
+const Attachment = require('../models/Attachment');
 const ActivityRevision = require('../models/ActivityRevision');
 const SupportLog = require('../models/SupportLog');
 const AiUsage = require('../models/AiUsage');
@@ -29,6 +30,7 @@ const {
   EXPORT_MESSAGE,
   EDIT_MESSAGE,
   AI_MESSAGE,
+  EXCESS_MESSAGE,
 } = require('../utils/planAccess');
 const { upgradeBody } = require('../utils/membershipTiers');
 
@@ -157,6 +159,7 @@ afterEach(async () => {
     ActivityRevision.deleteMany({}),
     SupportLog.deleteMany({}),
     AiUsage.deleteMany({}),
+    Attachment.deleteMany({}),
   ]);
 });
 
@@ -559,5 +562,200 @@ describe('free-owner trial and Plus gating', () => {
       expect(shown.planCap).toBe(cap);
       expect(shown.plansOwned).toBe(cap);
     }
+  });
+
+  test('an active trial keeps the two oldest owned plans editable', async () => {
+    const ada = await registerAndLogin('ada-trial-excess@example.com');
+    const grace = await registerAndLogin('grace-trial-excess@example.com');
+    const guest = await registerAndLogin('guest-trial-excess@example.com');
+    const first = await postPlan(ada.token, 'Paris');
+    const second = await postPlan(ada.token, 'Lyon');
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const olderIds = [first.body.plan._id, second.body.plan._id];
+
+    const thirdCreate = await postPlan(ada.token, 'Nice');
+    expect(thirdCreate.status).toBe(402);
+    expect(thirdCreate.body).toEqual(upgradeBody('trial'));
+    expect(await Plan.countDocuments({ ownerId: ada.userId })).toBe(2);
+
+    const newestId = 'trial-excess-nice';
+    await Plan.create({
+      _id: newestId,
+      type: 'trip',
+      name: 'Nice',
+      destination: 'Paris',
+      ownerId: ada.userId,
+      timeZone: 'UTC',
+    });
+    await PlanUser.create({ planId: newestId, userId: ada.userId, role: 'Owner' });
+    await Plan.updateOne({ _id: olderIds[0] }, { $set: { createdAt: new Date('2026-01-01T00:00:00.000Z') } });
+    await Plan.updateOne({ _id: olderIds[1] }, { $set: { createdAt: new Date('2026-02-01T00:00:00.000Z') } });
+    await Plan.updateOne({ _id: newestId }, { $set: { createdAt: new Date('2026-03-01T00:00:00.000Z') } });
+
+    const dinner = await Event.create({
+      _id: 'trial-excess-dinner',
+      name: 'Dinner',
+      type: 'dining',
+      planId: newestId,
+      ownerId: ada.userId,
+    });
+    await Attachment.create({
+      _id: 'trial-excess-file',
+      activityId: dinner._id,
+      planId: newestId,
+      uploadedBy: ada.userId,
+      filename: 'note.pdf',
+      mimeType: 'application/pdf',
+      size: 12,
+      storageKey: 'trial-excess-file',
+    });
+
+    const listed = await request(app).get('/api/plans').set(bearer(ada.token));
+    expect(listed.status).toBe(200);
+    const byId = new Map(listed.body.plans.map((plan) => [plan._id, plan]));
+    expect(byId.get(olderIds[0]).trialReadOnly).toBe(false);
+    expect(byId.get(olderIds[1]).trialReadOnly).toBe(false);
+    expect(byId.get(newestId).trialReadOnly).toBe(true);
+
+    const opened = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
+    expect(opened.status).toBe(200);
+    expect(opened.body.plan.name).toBe('Nice');
+    expect(opened.body.plan.trialReadOnly).toBe(true);
+    const itinerary = await request(app)
+      .get(`/api/plans/${newestId}/itinerary`)
+      .set(bearer(ada.token));
+    expect(itinerary.status).toBe(200);
+
+    for (const planId of olderIds) {
+      const added = await postActivity(ada.token, planId, 'Older dinner');
+      expect(added.status).toBe(201);
+    }
+    const blockedAdd = await postActivity(ada.token, newestId, 'New dinner');
+    expect(blockedAdd.status).toBe(402);
+    expect(blockedAdd.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Event.countDocuments({ planId: newestId, name: 'New dinner' })).toBe(0);
+
+    const blockedEdit = await request(app)
+      .put(`/api/plans/${newestId}`)
+      .set(bearer(ada.token))
+      .send({ name: 'Renamed' });
+    expect(blockedEdit.status).toBe(402);
+    expect(blockedEdit.body).toEqual({ message: EXCESS_MESSAGE });
+    expect((await Plan.findById(newestId)).name).toBe('Nice');
+
+    const blockedActivity = await request(app)
+      .put(`/api/activities/${dinner._id}`)
+      .set(bearer(ada.token))
+      .send({ name: 'Late dinner' });
+    expect(blockedActivity.status).toBe(402);
+    expect(blockedActivity.body).toEqual({ message: EXCESS_MESSAGE });
+    expect((await Event.findById(dinner._id)).name).toBe('Dinner');
+
+    const blockedRemoveActivity = await request(app)
+      .delete(`/api/activities/${dinner._id}`)
+      .set(bearer(ada.token));
+    expect(blockedRemoveActivity.status).toBe(402);
+    expect(blockedRemoveActivity.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Event.findById(dinner._id)).not.toBeNull();
+
+    const blockedApply = await request(app)
+      .post(`/api/plans/${newestId}/ai-command/apply`)
+      .set(bearer(ada.token))
+      .send({ action: 'add', activity: { title: 'Cafe' } });
+    expect(blockedApply.status).toBe(402);
+    expect(blockedApply.body).toEqual({ message: EXCESS_MESSAGE });
+
+    const blockedSuggest = await request(app)
+      .post(`/api/plans/${newestId}/suggest`)
+      .set(bearer(ada.token))
+      .send({ query: 'cafe' });
+    expect(blockedSuggest.status).toBe(402);
+    expect(blockedSuggest.body).toEqual({ message: EXCESS_MESSAGE });
+
+    const blockedUpload = await request(app)
+      .post(`/api/activities/${dinner._id}/attachments`)
+      .set(bearer(ada.token));
+    expect(blockedUpload.status).toBe(402);
+    expect(blockedUpload.body).toEqual({ message: EXCESS_MESSAGE });
+
+    const blockedFile = await request(app)
+      .delete('/api/attachments/trial-excess-file')
+      .set(bearer(ada.token));
+    expect(blockedFile.status).toBe(402);
+    expect(blockedFile.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Attachment.findById('trial-excess-file')).not.toBeNull();
+
+    const blockedDelete = await request(app)
+      .delete(`/api/plans/${newestId}`)
+      .set(bearer(ada.token));
+    expect(blockedDelete.status).toBe(402);
+    expect(blockedDelete.body).toEqual({ message: EXCESS_MESSAGE });
+    expect(await Plan.findById(newestId)).not.toBeNull();
+
+    const exported = await exportPlan(ada.token, olderIds[0]);
+    expect(exported.status).toBe(402);
+    expect(exported.body).toEqual({ message: EXPORT_MESSAGE });
+
+    await acceptRole(ada.token, grace.token, newestId, 'grace-trial-excess@example.com', 'Collaborator');
+    await acceptRole(ada.token, guest.token, newestId, 'guest-trial-excess@example.com', 'Guest');
+    const collaboratorWrite = await postActivity(grace.token, newestId, 'Grace dinner');
+    expect(collaboratorWrite.status).toBe(402);
+    expect(collaboratorWrite.body).toEqual({ message: EXCESS_MESSAGE });
+    const guestWrite = await postActivity(guest.token, newestId, 'Guest dinner');
+    expect(guestWrite.status).toBe(403);
+    const olderCollaborator = await postActivity(grace.token, olderIds[0], 'Grace on Paris');
+    expect(olderCollaborator.status).toBe(403);
+
+    await acceptRole(ada.token, grace.token, olderIds[0], 'grace-trial-excess@example.com', 'Collaborator');
+    const olderAllowed = await postActivity(grace.token, olderIds[0], 'Grace on Paris');
+    expect(olderAllowed.status).toBe(201);
+
+    await User.updateOne({ _id: ada.userId }, { $set: { plusActive: true } });
+    const plusAdd = await postActivity(ada.token, newestId, 'Plus dinner');
+    expect(plusAdd.status).toBe(201);
+    const plusEdit = await request(app)
+      .put(`/api/plans/${newestId}`)
+      .set(bearer(ada.token))
+      .send({ name: 'Nice plus' });
+    expect(plusEdit.status).toBe(200);
+    expect(plusEdit.body.plan.name).toBe('Nice plus');
+    const plusOlder = await postActivity(ada.token, olderIds[1], 'Plus Lyon');
+    expect(plusOlder.status).toBe(201);
+    const unlocked = await request(app).get(`/api/plans/${newestId}`).set(bearer(ada.token));
+    expect(unlocked.status).toBe(200);
+    expect(unlocked.body.plan.trialReadOnly).toBe(false);
+  });
+
+  test('an ended trial still uses the existing edit message on a newer plan', async () => {
+    const ada = await registerAndLogin('ada-trial-excess-ended@example.com');
+    const created = await postPlan(ada.token, 'Paris');
+    expect(created.status).toBe(201);
+    const oldestId = created.body.plan._id;
+    const middleId = 'trial-excess-ended-middle';
+    const newestId = 'trial-excess-ended';
+    await Plan.create({
+      _id: middleId,
+      type: 'trip',
+      name: 'Middle',
+      destination: 'Paris',
+      ownerId: ada.userId,
+      timeZone: 'UTC',
+    });
+    await Plan.create({
+      _id: newestId,
+      type: 'trip',
+      name: 'Later',
+      destination: 'Paris',
+      ownerId: ada.userId,
+      timeZone: 'UTC',
+    });
+    await Plan.updateOne({ _id: oldestId }, { $set: { createdAt: new Date('2026-01-01T00:00:00.000Z') } });
+    await Plan.updateOne({ _id: middleId }, { $set: { createdAt: new Date('2026-02-01T00:00:00.000Z') } });
+    await Plan.updateOne({ _id: newestId }, { $set: { createdAt: new Date('2026-03-01T00:00:00.000Z') } });
+    await endAccess(ada.userId);
+    const blocked = await postActivity(ada.token, newestId, 'Too late');
+    expect(blocked.status).toBe(402);
+    expect(blocked.body).toEqual({ message: EDIT_MESSAGE });
   });
 });
