@@ -329,8 +329,7 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
     if (result.status == 402) {
       await showPlusUpgradeDialog(
         context,
-        message: result.error ??
-            'This plan is read-only on the free trial. Upgrade to Plus to edit it.',
+        message: result.error ?? excessTrialPlanMessage,
         token: context.read<UserProvider>().token,
       );
       return;

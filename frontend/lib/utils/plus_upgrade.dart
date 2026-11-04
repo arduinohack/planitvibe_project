@@ -6,6 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/api_client.dart' as api;
 import '../config/constants.dart';
 
+const excessTrialPlanMessage =
+    'This plan is read-only on the free trial. Upgrade to PlanItVibe to edit it.';
+
 String _apiMessage(String body, String fallback) {
   try {
     final data = json.decode(body);
@@ -27,9 +30,13 @@ Future<void> showPlusUpgradeDialog(
   String? tierName,
   bool showUpgrade = true,
 }) {
-  final label = tierName == null || tierName.trim().isEmpty
-      ? 'Upgrade to Plus'
-      : 'Upgrade to ${tierName.trim()}';
+  final excess = message.trim() == excessTrialPlanMessage;
+  final checkoutPack = excess ? 'planitvibe' : pack;
+  final label = excess
+      ? 'Upgrade to PlanItVibe'
+      : (tierName == null || tierName.trim().isEmpty
+          ? 'Upgrade to Plus'
+          : 'Upgrade to ${tierName.trim()}');
   return showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -43,7 +50,7 @@ Future<void> showPlusUpgradeDialog(
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              await startPlusCheckout(context, token, pack: pack);
+              await startPlusCheckout(context, token, pack: checkoutPack);
             },
             child: Text(label),
           ),

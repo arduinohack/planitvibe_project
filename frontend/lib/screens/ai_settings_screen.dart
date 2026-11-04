@@ -25,24 +25,94 @@ String subscriptionDateText(String? iso) {
   return DateFormat.yMMMd().format(parsed.toLocal());
 }
 
-String subscribedLine({required String tier, String? subscribedAt}) {
-  if (tier == tierTrial) return 'Date subscribed: —';
-  return 'Date subscribed: ${subscriptionDateText(subscribedAt)}';
+const String noSubscriptionName = 'Free trial or none';
+const String autoSubscribedLine = 'Auto subscribed';
+const String aiProviderLine = 'AI provider: PlanItVibe (xAI)';
+
+/// Paid plan name, or [noSubscriptionName] when there is no subscription.
+String currentSubscriptionLine(String? subscriptionTier) {
+  switch ((subscriptionTier ?? '').trim()) {
+    case tierPlanItVibe:
+      return 'Current subscription: $tierPlanItVibeName';
+    case tierPlus:
+      return 'Current subscription: $tierPlusName';
+    case tierPro:
+      return 'Current subscription: $tierProName';
+    default:
+      return 'Current subscription: $noSubscriptionName';
+  }
 }
 
-String subscriptionPeriodLine({
-  required String tier,
-  String? trialEndsAt,
-  String? currentPeriodEnd,
-  String? expiredAt,
-}) {
-  if ((expiredAt ?? '').trim().isNotEmpty) {
-    return 'Expired on ${subscriptionDateText(expiredAt)}';
-  }
-  if (tier == tierTrial) {
-    return 'Trial ends: ${subscriptionDateText(trialEndsAt)}';
-  }
-  return 'Current period ends: ${subscriptionDateText(currentPeriodEnd)}';
+String subscriptionStartedLine(String? iso) {
+  return 'Subscription started: ${subscriptionDateText(iso)}';
+}
+
+String subscriptionEndsLine(String? iso) {
+  return 'Subscription ends: ${subscriptionDateText(iso)}';
+}
+
+String plansOwnedLine(int? owned) {
+  if (owned == null) return 'Plans owned: —';
+  return 'Plans owned: $owned';
+}
+
+/// Null [planLimit] is unlimited. A missing count before load uses the trial cap.
+String planLimitLine({int? planLimit, bool unlimited = false}) {
+  if (unlimited) return 'Plan limit: Unlimited';
+  return 'Plan limit: ${planLimit ?? planCapForTier(tierTrial)}';
+}
+
+String remainingMonthlyLine(num? value) {
+  if (value == null) return 'Remaining monthly credits: —';
+  return 'Remaining monthly credits: ${creditBalanceText(value)}';
+}
+
+String purchasedCreditsLine(num? value) {
+  if (value == null) return 'Purchased credits: —';
+  return 'Purchased credits: ${creditBalanceText(value)}';
+}
+
+/// Every paid tier except the current one, lowest first.
+List<String> otherPaidTiers(String? subscriptionTier) {
+  final current = (subscriptionTier ?? '').trim();
+  return membershipTierOrder
+      .where((tier) => tier != tierTrial && tier != current)
+      .toList();
+}
+
+String tierCheckoutLabel(String tierId, String? subscriptionTier) {
+  final name = tierDisplayName(tierId);
+  final current = (subscriptionTier ?? '').trim();
+  final currentIndex = membershipTierOrder.indexOf(current);
+  final tierIndex = membershipTierOrder.indexOf(tierId);
+  if (currentIndex > tierIndex) return 'Downgrade to $name';
+  return 'Upgrade to $name';
+}
+
+class SubscriptionSettings {
+  const SubscriptionSettings({
+    this.subscriptionTier,
+    this.subscriptionStartedAt,
+    this.subscriptionEndsAt,
+    this.autoRenew = false,
+    this.plansOwned,
+    this.planLimit,
+    this.unlimitedPlans = false,
+    this.monthlyCreditsRemaining,
+    this.purchasedCredits,
+  });
+
+  final String? subscriptionTier;
+  final String? subscriptionStartedAt;
+  final String? subscriptionEndsAt;
+  final bool autoRenew;
+  final int? plansOwned;
+  final int? planLimit;
+  final bool unlimitedPlans;
+  final num? monthlyCreditsRemaining;
+  final num? purchasedCredits;
+
+  static const empty = SubscriptionSettings(planLimit: 2);
 }
 
 String? _dateField(Map body, String key) {
@@ -51,32 +121,45 @@ String? _dateField(Map body, String key) {
   return value.trim();
 }
 
-const _providerValues = <String>[
-  'xai',
-  'openai',
-  'anthropic',
-  'gemini',
-  'none',
-];
-
-String _providerLabel(String provider) {
-  switch (provider) {
-    case 'xai':
-      return 'xAI';
-    case 'openai':
-      return 'OpenAI';
-    case 'anthropic':
-      return 'Anthropic';
-    case 'gemini':
-      return 'Gemini';
-    default:
-      return 'None';
+String? _tierField(Map body) {
+  if (!body.containsKey('subscriptionTier')) {
+    final legacy = body['tier'];
+    if (legacy is String && legacy.trim().isNotEmpty && legacy.trim() != tierTrial) {
+      return legacy.trim();
+    }
+    return null;
   }
+  final value = body['subscriptionTier'];
+  if (value is! String || value.trim().isEmpty) return null;
+  return value.trim();
 }
 
-String _knownProvider(Object? value) {
-  if (value is String && _providerValues.contains(value)) return value;
-  return 'none';
+int? _intField(Object? value) {
+  if (value is num) return value.round();
+  return null;
+}
+
+SubscriptionSettings subscriptionSettingsFromBody(Map body) {
+  final tier = _tierField(body);
+  final unlimited = body.containsKey('planLimit')
+      ? body['planLimit'] == null
+      : tier == tierPlus || tier == tierPro;
+  final planLimit = unlimited ? null : _intField(body['planLimit']) ?? planCapForTier(tier);
+  final monthly = body['monthlyCreditsRemaining'] ?? body['monthlyCredits'];
+  final purchased = body['purchasedCredits'];
+  return SubscriptionSettings(
+    subscriptionTier: tier,
+    subscriptionStartedAt: _dateField(body, 'subscriptionStartedAt') ??
+        (tier == null ? null : _dateField(body, 'subscribedAt')),
+    subscriptionEndsAt: _dateField(body, 'subscriptionEndsAt') ??
+        (tier == null ? null : _dateField(body, 'currentPeriodEnd')),
+    autoRenew: body['autoRenew'] == true,
+    plansOwned: _intField(body['plansOwned']),
+    planLimit: planLimit,
+    unlimitedPlans: unlimited,
+    monthlyCreditsRemaining: monthly is num ? monthly : null,
+    purchasedCredits: purchased is num ? purchased : null,
+  );
 }
 
 String? _apiMessage(String body, String fallback) {
@@ -93,90 +176,37 @@ String? _apiMessage(String body, String fallback) {
 }
 
 class AiSettingsScreen extends StatefulWidget {
-  const AiSettingsScreen({super.key});
+  const AiSettingsScreen({super.key, this.initialStatus});
+
+  /// Loaded snapshot. The screen fetches the status when this is omitted.
+  final SubscriptionSettings? initialStatus;
 
   @override
   State<AiSettingsScreen> createState() => _AiSettingsScreenState();
 }
 
 class _AiSettingsScreenState extends State<AiSettingsScreen> {
-  final _keyController = TextEditingController();
-  String _provider = 'none';
-  String _savedProvider = 'none';
-  bool _hasKey = false;
-  num? _monthlyCredits;
-  num? _purchasedCredits;
-  String _tier = tierTrial;
-  String _tierName = tierTrialName;
-  int _planCap = 2;
-  int? _plansOwned;
-  String? _subscribedAt;
-  String? _currentPeriodEnd;
-  String? _expiredAt;
-  String? _trialEndsAt;
+  SubscriptionSettings _status = SubscriptionSettings.empty;
   bool _loading = true;
   bool _busy = false;
   String? _error;
-  int _formGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialStatus;
+    if (initial != null) {
+      _status = initial;
+      _loading = false;
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _load();
     });
   }
 
-  @override
-  void dispose() {
-    _keyController.dispose();
-    super.dispose();
-  }
-
   String? get _token {
     return Provider.of<UserProvider>(context, listen: false).token;
-  }
-
-  void _applyStatus(
-    String provider,
-    bool hasKey,
-    num monthlyCredits,
-    num purchasedCredits, {
-    String tier = tierTrial,
-    String? tierName,
-    int? planCap,
-    int? plansOwned,
-    String? subscribedAt,
-    String? currentPeriodEnd,
-    String? expiredAt,
-    String? trialEndsAt,
-  }) {
-    _keyController.clear();
-    setState(() {
-      _savedProvider = provider;
-      _hasKey = hasKey;
-      _monthlyCredits = monthlyCredits;
-      _purchasedCredits = purchasedCredits;
-      _tier = tier;
-      _tierName = tierName == null || tierName.trim().isEmpty
-          ? tierDisplayName(tier)
-          : tierName.trim();
-      _planCap = planCap ?? planCapForTier(tier);
-      _plansOwned = plansOwned;
-      _subscribedAt = subscribedAt;
-      _currentPeriodEnd = currentPeriodEnd;
-      _expiredAt = expiredAt;
-      _trialEndsAt = trialEndsAt;
-      _provider = provider;
-      _formGeneration += 1;
-      _error = null;
-      _loading = false;
-      _busy = false;
-    });
-  }
-
-  String _creditText(num value) {
-    return creditBalanceText(value);
   }
 
   Future<void> _load() async {
@@ -191,34 +221,21 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       return;
     }
     try {
-      final headers = {'Authorization': 'Bearer $token'};
-      final responses = await Future.wait([
-        api.get(
-          Uri.parse('$backendBaseUrl$apiUserAiSettings'),
-          headers: headers,
-        ),
-        api.get(
-          Uri.parse('$backendBaseUrl$apiUserAiCredits'),
-          headers: headers,
-        ),
-      ]);
+      final response = await api.get(
+        Uri.parse('$backendBaseUrl$apiUserAiCredits'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
       if (!mounted) return;
-      final settings = responses[0];
-      final credits = responses[1];
-      if (settings.statusCode != 200 || credits.statusCode != 200) {
-        final failed = settings.statusCode != 200 ? settings : credits;
+      if (response.statusCode != 200) {
         setState(() {
           _loading = false;
           _busy = false;
-          _error = _apiMessage(failed.body, 'Could not load AI settings');
+          _error = _apiMessage(response.body, 'Could not load AI settings');
         });
         return;
       }
-      final data = json.decode(settings.body);
-      final creditBody = json.decode(credits.body);
-      final monthly = creditBody is Map ? creditBody['monthlyCredits'] : null;
-      final purchased = creditBody is Map ? creditBody['purchasedCredits'] : null;
-      if (data is! Map || data['hasKey'] is! bool || monthly is! num || purchased is! num) {
+      final creditBody = json.decode(response.body);
+      if (creditBody is! Map) {
         setState(() {
           _loading = false;
           _busy = false;
@@ -226,82 +243,27 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         });
         return;
       }
-      final rawTier = creditBody is Map ? creditBody['tier'] : null;
-      final paid = creditBody is Map && creditBody['plusActive'] == true;
-      final tier = rawTier is String && rawTier.trim().isNotEmpty
-          ? rawTier.trim()
-          : (paid ? tierPlus : tierTrial);
-      final rawName = creditBody is Map ? creditBody['tierName'] : null;
-      final rawCap = creditBody is Map ? creditBody['planCap'] : null;
-      final rawOwned = creditBody is Map ? creditBody['plansOwned'] : null;
-      final creditsMap = creditBody is Map ? creditBody : const <String, dynamic>{};
-      _applyStatus(
-        _knownProvider(data['aiProvider']),
-        data['hasKey'] as bool,
-        monthly,
-        purchased,
-        tier: tier,
-        tierName: rawName is String ? rawName : null,
-        planCap: rawCap is num ? rawCap.round() : null,
-        plansOwned: rawOwned is num ? rawOwned.round() : null,
-        subscribedAt: _dateField(creditsMap, 'subscribedAt'),
-        currentPeriodEnd: _dateField(creditsMap, 'currentPeriodEnd'),
-        expiredAt: _dateField(creditsMap, 'expiredAt'),
-        trialEndsAt: _dateField(creditsMap, 'trialEndsAt'),
-      );
+      final status = subscriptionSettingsFromBody(creditBody);
+      if (status.monthlyCreditsRemaining == null || status.purchasedCredits == null) {
+        setState(() {
+          _loading = false;
+          _busy = false;
+          _error = 'Could not load AI settings';
+        });
+        return;
+      }
+      setState(() {
+        _status = status;
+        _error = null;
+        _loading = false;
+        _busy = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _busy = false;
         _error = 'Could not load AI settings';
-      });
-    }
-  }
-
-  Future<void> _save({required bool clear}) async {
-    if (_busy) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final token = _token;
-    if (token == null || token.isEmpty) {
-      setState(() => _error = 'Sign in to save AI settings');
-      return;
-    }
-    final provider = clear ? 'none' : _provider;
-    final apiKey = clear || provider == 'none'
-        ? ''
-        : _keyController.text.trim();
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final response = await api.put(
-        Uri.parse('$backendBaseUrl$apiUserAiSettings'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: json.encode({'aiProvider': provider, 'apiKey': apiKey}),
-      );
-      if (!mounted) return;
-      if (response.statusCode != 200) {
-        setState(() {
-          _busy = false;
-          _error = _apiMessage(response.body, 'Could not save AI settings');
-        });
-        return;
-      }
-      await _load();
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(clear ? 'AI key cleared' : 'AI settings saved')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = 'Could not save AI settings';
       });
     }
   }
@@ -376,6 +338,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final status = _status;
+    final tier = status.subscriptionTier;
     return Scaffold(
       appBar: AppBar(title: const Text('Subscription and AI Settings')),
       body: _loading
@@ -386,63 +350,49 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Text('Provider: ${_providerLabel(_savedProvider)}'),
+                  Text(currentSubscriptionLine(tier)),
                   const SizedBox(height: 8),
-                  Text(_hasKey ? 'A key is saved' : 'No key is saved'),
+                  Text(subscriptionStartedLine(status.subscriptionStartedAt)),
                   const SizedBox(height: 8),
-                  Text(_tierName),
+                  Text(subscriptionEndsLine(status.subscriptionEndsAt)),
+                  if (status.autoRenew) ...[
+                    const SizedBox(height: 8),
+                    const Text(autoSubscribedLine),
+                  ],
                   const SizedBox(height: 8),
-                  Text(subscribedLine(tier: _tier, subscribedAt: _subscribedAt)),
+                  Text(plansOwnedLine(status.plansOwned)),
                   const SizedBox(height: 8),
                   Text(
-                    subscriptionPeriodLine(
-                      tier: _tier,
-                      trialEndsAt: _trialEndsAt,
-                      currentPeriodEnd: _currentPeriodEnd,
-                      expiredAt: _expiredAt,
+                    planLimitLine(
+                      planLimit: status.planLimit,
+                      unlimited: status.unlimitedPlans,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Plan cap: $_planCap'),
-                  if (_plansOwned != null) ...[
-                    const SizedBox(height: 8),
-                    Text('Plans owned: $_plansOwned'),
-                  ],
+                  Text(remainingMonthlyLine(status.monthlyCreditsRemaining)),
                   const SizedBox(height: 8),
-                  Text(
-                    _monthlyCredits == null
-                        ? 'Monthly credits: —'
-                        : 'Monthly credits: ${_creditText(_monthlyCredits!)}',
-                  ),
+                  Text(purchasedCreditsLine(status.purchasedCredits)),
                   const SizedBox(height: 8),
-                  Text(
-                    _purchasedCredits == null
-                        ? 'Purchased credits: —'
-                        : 'Purchased credits: ${_creditText(_purchasedCredits!)}',
-                  ),
+                  const Text(aiProviderLine),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
                     children: [
-                      for (final tierId in upgradeTiersAbove(_tier))
-                        OutlinedButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _buy(_packForTier(tierId)),
-                          child: Text(
-                            'Upgrade to ${tierDisplayName(tierId)}',
-                          ),
-                        ),
-                      for (final tierId in downgradeTiersBelow(_tier))
-                        TextButton(
-                          onPressed: _busy
-                              ? null
-                              : () => _buy(_packForTier(tierId)),
-                          child: Text(
-                            'Downgrade to ${tierDisplayName(tierId)}',
-                          ),
-                        ),
+                      for (final tierId in otherPaidTiers(tier))
+                        tierCheckoutLabel(tierId, tier).startsWith('Downgrade')
+                            ? TextButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _buy(_packForTier(tierId)),
+                                child: Text(tierCheckoutLabel(tierId, tier)),
+                              )
+                            : OutlinedButton(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _buy(_packForTier(tierId)),
+                                child: Text(tierCheckoutLabel(tierId, tier)),
+                              ),
                       OutlinedButton(
                         onPressed: _busy ? null : () => _buy('100'),
                         child: const Text('Buy 100 credits'),
@@ -454,59 +404,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                       TextButton(
                         onPressed: _busy ? null : _load,
                         child: const Text('Refresh'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Confirmation paste and place summaries use a saved key. With no saved key, the server key is used.',
-                  ),
-                  const SizedBox(height: 24),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('ai-provider-$_formGeneration'),
-                    initialValue: _provider,
-                    decoration: const InputDecoration(
-                      labelText: 'Provider',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: [
-                      for (final value in _providerValues)
-                        DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(_providerLabel(value)),
-                        ),
-                    ],
-                    onChanged: _busy
-                        ? null
-                        : (value) {
-                            if (value == null) return;
-                            setState(() => _provider = value);
-                          },
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _keyController,
-                    obscureText: true,
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    enabled: !_busy,
-                    decoration: const InputDecoration(
-                      labelText: 'API key',
-                      border: OutlineInputBorder(),
-                      helperText: 'Leave blank on Save to clear the saved key',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      FilledButton(
-                        onPressed: _busy ? null : () => _save(clear: false),
-                        child: const Text('Save'),
-                      ),
-                      const SizedBox(width: 12),
-                      OutlinedButton(
-                        onPressed: _busy ? null : () => _save(clear: true),
-                        child: const Text('Clear'),
                       ),
                     ],
                   ),
