@@ -411,13 +411,60 @@ class PlaceSearchResult {
   final String? error;
   final List<PlaceSuggestion> places;
   final bool idOnly;
+  final String? message;
 
   const PlaceSearchResult({
     this.status,
     this.error,
     this.places = const [],
     this.idOnly = false,
+    this.message,
   });
+}
+
+/// Reads a Search places body. A places array is kept even when each item
+/// has only googlePlaceId. A message on that body is returned with the rows.
+PlaceSearchResult parsePlaceSearchBody(Object? data) {
+  if (data is List) return _placesFromSearchList(data, null);
+  if (data is Map) {
+    final rawMessage = data['message'];
+    final message = rawMessage == null ? '' : rawMessage.toString().trim();
+    return _placesFromSearchList(
+      data['places'],
+      message.isEmpty ? null : message,
+    );
+  }
+  return const PlaceSearchResult(status: 200);
+}
+
+PlaceSearchResult _placesFromSearchList(Object? list, String? message) {
+  if (list is! List) {
+    return PlaceSearchResult(status: 200, message: message);
+  }
+  final places = <PlaceSuggestion>[];
+  for (final item in list) {
+    if (item is! Map) continue;
+    final placeId = (item['googlePlaceId'] ?? '').toString().trim();
+    if (placeId.isEmpty) continue;
+    final name = (item['name'] ?? '').toString().trim();
+    final rawZone = item['timeZone'];
+    places.add(
+      PlaceSuggestion(
+        placeId: placeId,
+        name: name,
+        address: (item['address'] ?? '').toString().trim(),
+        timeZone: rawZone == null ? '' : rawZone.toString().trim(),
+      ),
+    );
+  }
+  final idOnly =
+      places.isNotEmpty && places.every((place) => place.name.isEmpty);
+  return PlaceSearchResult(
+    status: 200,
+    places: places,
+    idOnly: idOnly,
+    message: message,
+  );
 }
 
 class ActivityHistoryRevision {
@@ -2505,7 +2552,7 @@ class PlanProvider extends ChangeNotifier {
 
   /// GET /api/places/autocomplete?q=. 200 is a short list of places.
   /// A Pro place has googlePlaceId, name, address, and an IANA timeZone or none.
-  /// A zero-credit search returns googlePlaceId only and sets [PlaceSearchResult.idOnly].
+  /// A zero-credit body is { places: [{ googlePlaceId }], message }.
   Future<PlaceSearchResult> searchPlaces({
     required String query,
     required String? token,
@@ -2530,31 +2577,7 @@ class PlanProvider extends ChangeNotifier {
         );
       }
       final data = json.decode(response.body);
-      final idOnly = data is Map;
-      final list = data is List
-          ? data
-          : (data is Map ? data['places'] : null);
-      if (list is! List) {
-        return PlaceSearchResult(status: 200, idOnly: idOnly);
-      }
-      final places = <PlaceSuggestion>[];
-      for (final item in list) {
-        if (item is! Map) continue;
-        final placeId = (item['googlePlaceId'] ?? '').toString().trim();
-        final name = (item['name'] ?? '').toString().trim();
-        if (placeId.isEmpty) continue;
-        if (!idOnly && name.isEmpty) continue;
-        final rawZone = item['timeZone'];
-        places.add(
-          PlaceSuggestion(
-            placeId: placeId,
-            name: name,
-            address: (item['address'] ?? '').toString().trim(),
-            timeZone: rawZone == null ? '' : rawZone.toString().trim(),
-          ),
-        );
-      }
-      return PlaceSearchResult(status: 200, places: places, idOnly: idOnly);
+      return parsePlaceSearchBody(data);
     } catch (e) {
       logger.e('Error searching places: $e');
       return const PlaceSearchResult(error: 'Could not search places');

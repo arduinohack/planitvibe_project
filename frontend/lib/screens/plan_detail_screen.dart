@@ -749,6 +749,76 @@ String? placeSearchTextFromLocation({
   return next;
 }
 
+/// Label for one Search places row. An ID-only place uses the query text.
+String placeSearchResultLabel({
+  required PlaceSuggestion place,
+  required String query,
+}) {
+  final name = place.name.trim();
+  if (name.isEmpty) {
+    final typed = query.trim();
+    return typed.isEmpty ? place.placeId : typed;
+  }
+  if (place.address.trim().isEmpty) return name;
+  return '$name, ${place.address.trim()}';
+}
+
+/// Sets the Place ID. An ID-only place copies [query] into the location.
+PlaceSelection applySearchedPlace({
+  required PlaceSuggestion place,
+  required String query,
+  required String location,
+}) {
+  final name = place.name.trim().isEmpty ? query.trim() : place.name;
+  return applyPlaceSelection(
+    location: location,
+    placeId: place.placeId,
+    name: name,
+  );
+}
+
+/// Search places rows. A response message is shown once and does not hide rows.
+class PlaceSearchResultList extends StatelessWidget {
+  final List<PlaceSuggestion> places;
+  final String query;
+  final String? message;
+  final ValueChanged<PlaceSuggestion> onSelected;
+
+  const PlaceSearchResultList({
+    super.key,
+    required this.places,
+    required this.query,
+    required this.onSelected,
+    this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final note = message?.trim() ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (note.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(note),
+          ),
+        for (final place in places)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => onSelected(place),
+              child: Text(
+                placeSearchResultLabel(place: place, query: query),
+                textAlign: TextAlign.start,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Sets the Place ID and copies the place name into the location field.
 /// A blank name leaves the current location alone.
 PlaceSelection applyPlaceSelection({
@@ -3998,6 +4068,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   String _placeSearchSeed = '';
   List<PlaceSuggestion> _placeSuggestions = const [];
   String? _placeSearchError;
+  String? _placeSearchMessage;
   late final String _openedForm;
   final List<_ExtraLeg> _extraLegs = [];
   final List<_ExtraLeg> _retiredLegs = [];
@@ -5241,6 +5312,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     setState(() {
       _placeSuggestions = const [];
       _placeSearchError = null;
+      _placeSearchMessage = null;
     });
     if (query.isEmpty) return;
     final seq = _placeSearchSeq;
@@ -5265,16 +5337,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       setState(() {
         _placeSuggestions = const [];
         _placeSearchError = result.error ?? 'Could not search places';
+        _placeSearchMessage = null;
       });
       return;
     }
-    if (result.idOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not enough AI credits.')),
-      );
-    }
     setState(() {
       _placeSuggestions = result.places;
+      _placeSearchMessage = result.message;
       _placeSearchError = result.places.isEmpty ? 'No places found' : null;
     });
   }
@@ -5319,22 +5388,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _selectPlace(PlaceSuggestion place) {
-    if (place.name.trim().isEmpty) {
-      final placeId = place.placeId.trim();
-      if (placeId.isEmpty) return;
-      _placeSearchTimer?.cancel();
-      _placeSearchSeq += 1;
-      setState(() {
-        _googlePlaceIdController.text = placeId;
-        _placeSuggestions = const [];
-        _placeSearchError = null;
-      });
-      return;
-    }
-    final selection = applyPlaceSelection(
+    final idOnly = place.name.trim().isEmpty;
+    final selection = applySearchedPlace(
+      place: place,
+      query: _placeSearchController.text,
       location: _locationController.text,
-      placeId: place.placeId,
-      name: place.name,
     );
     if (selection.googlePlaceId.isEmpty) return;
     _placeSearchTimer?.cancel();
@@ -5346,8 +5404,13 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       }
       _placeSuggestions = const [];
       _placeSearchError = null;
-      _placeSearchController.text = place.name;
-      _applySearchPlaceZone(place.timeZone);
+      _placeSearchMessage = null;
+      final shown = placeSearchResultLabel(
+        place: place,
+        query: _placeSearchController.text,
+      );
+      if (shown.isNotEmpty) _placeSearchController.text = shown;
+      if (!idOnly) _applySearchPlaceZone(place.timeZone);
     });
   }
 
@@ -6029,21 +6092,12 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-              for (final place in _placeSuggestions)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () => _selectPlace(place),
-                    child: Text(
-                      place.name.isEmpty
-                          ? place.placeId
-                          : place.address.isEmpty
-                          ? place.name
-                          : '${place.name}, ${place.address}',
-                      textAlign: TextAlign.start,
-                    ),
-                  ),
-                ),
+              PlaceSearchResultList(
+                places: _placeSuggestions,
+                query: _placeSearchController.text,
+                message: _placeSearchMessage,
+                onSelected: _selectPlace,
+              ),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
