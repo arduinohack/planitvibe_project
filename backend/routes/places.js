@@ -4,6 +4,8 @@ const authMiddleware = require('../middleware/auth');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const { canonicalMembershipRole } = require('../middleware/roleCheck');
+const { getAiClient } = require('../utils/aiProvider');
+const { INSUFFICIENT_MESSAGE } = require('../utils/aiCredits');
 const { searchPlaces } = require('../utils/placeAutocomplete');
 
 async function callerMaySearchPlaces(callerId) {
@@ -19,8 +21,8 @@ async function callerMaySearchPlaces(callerId) {
 }
 
 // GET /api/places/autocomplete?q=
-// Owner or Collaborator. Text Search Pro for Search places.
-// Returns googlePlaceId, name, address, and timeZone. Does not write a plan.
+// Owner or Collaborator. Text Search Pro while credits remain, IDs Only at zero.
+// Does not write a plan or an activity.
 router.get('/autocomplete', authMiddleware, async (req, res) => {
   try {
     const callerId = req.user.userId || req.user.id;
@@ -32,9 +34,16 @@ router.get('/autocomplete', authMiddleware, async (req, res) => {
     }
     const raw = req.query && req.query.q;
     const query = Array.isArray(raw) ? raw[0] : raw;
-    const result = await searchPlaces(query);
+    const aiClient = await getAiClient(req.user);
+    const result = await searchPlaces(query, { userId: callerId, aiClient });
     if (result.status !== 200) {
       return res.status(result.status).json({ message: result.msg });
+    }
+    if (result.idOnly) {
+      return res.json({
+        places: result.places,
+        message: INSUFFICIENT_MESSAGE,
+      });
     }
     return res.json(result.places);
   } catch (err) {

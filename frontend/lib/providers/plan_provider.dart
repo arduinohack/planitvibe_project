@@ -410,11 +410,13 @@ class PlaceSearchResult {
   final int? status;
   final String? error;
   final List<PlaceSuggestion> places;
+  final bool idOnly;
 
   const PlaceSearchResult({
     this.status,
     this.error,
     this.places = const [],
+    this.idOnly = false,
   });
 }
 
@@ -2502,7 +2504,8 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// GET /api/places/autocomplete?q=. 200 is a short list of places.
-  /// Each place has googlePlaceId, name, address, and an IANA timeZone or none.
+  /// A Pro place has googlePlaceId, name, address, and an IANA timeZone or none.
+  /// A zero-credit search returns googlePlaceId only and sets [PlaceSearchResult.idOnly].
   Future<PlaceSearchResult> searchPlaces({
     required String query,
     required String? token,
@@ -2527,15 +2530,20 @@ class PlanProvider extends ChangeNotifier {
         );
       }
       final data = json.decode(response.body);
-      if (data is! List) {
-        return const PlaceSearchResult(status: 200);
+      final idOnly = data is Map;
+      final list = data is List
+          ? data
+          : (data is Map ? data['places'] : null);
+      if (list is! List) {
+        return PlaceSearchResult(status: 200, idOnly: idOnly);
       }
       final places = <PlaceSuggestion>[];
-      for (final item in data) {
+      for (final item in list) {
         if (item is! Map) continue;
         final placeId = (item['googlePlaceId'] ?? '').toString().trim();
         final name = (item['name'] ?? '').toString().trim();
-        if (placeId.isEmpty || name.isEmpty) continue;
+        if (placeId.isEmpty) continue;
+        if (!idOnly && name.isEmpty) continue;
         final rawZone = item['timeZone'];
         places.add(
           PlaceSuggestion(
@@ -2546,7 +2554,7 @@ class PlanProvider extends ChangeNotifier {
           ),
         );
       }
-      return PlaceSearchResult(status: 200, places: places);
+      return PlaceSearchResult(status: 200, places: places, idOnly: idOnly);
     } catch (e) {
       logger.e('Error searching places: $e');
       return const PlaceSearchResult(error: 'Could not search places');

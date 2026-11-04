@@ -5,7 +5,7 @@ const aiUsageSchema = new mongoose.Schema({
   _id: { type: String, default: uuidv4 },
   userId: { type: String, required: true },
   planId: { type: String },
-  feature: { type: String, enum: ['paste', 'suggest', 'command'], required: true },
+  feature: { type: String, enum: ['paste', 'suggest', 'command', 'placeSearch'], required: true },
   provider: {
     type: String,
     enum: ['xai', 'openai', 'anthropic', 'gemini', 'server', 'google'],

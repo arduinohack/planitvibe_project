@@ -5268,6 +5268,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       });
       return;
     }
+    if (result.idOnly) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not enough AI credits.')),
+      );
+    }
     setState(() {
       _placeSuggestions = result.places;
       _placeSearchError = result.places.isEmpty ? 'No places found' : null;
@@ -5314,6 +5319,18 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   }
 
   void _selectPlace(PlaceSuggestion place) {
+    if (place.name.trim().isEmpty) {
+      final placeId = place.placeId.trim();
+      if (placeId.isEmpty) return;
+      _placeSearchTimer?.cancel();
+      _placeSearchSeq += 1;
+      setState(() {
+        _googlePlaceIdController.text = placeId;
+        _placeSuggestions = const [];
+        _placeSearchError = null;
+      });
+      return;
+    }
     final selection = applyPlaceSelection(
       location: _locationController.text,
       placeId: place.placeId,
@@ -6018,7 +6035,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                   child: TextButton(
                     onPressed: () => _selectPlace(place),
                     child: Text(
-                      place.address.isEmpty
+                      place.name.isEmpty
+                          ? place.placeId
+                          : place.address.isEmpty
                           ? place.name
                           : '${place.name}, ${place.address}',
                       textAlign: TextAlign.start,

@@ -1,8 +1,15 @@
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
+const { recordAiUsage } = require('./aiUsage');
+const {
+  INSUFFICIENT_MESSAGE,
+  PLACES_CREDIT_COST,
+  getBalance,
+  deduct,
+} = require('./aiCredits');
 
 const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
-// Text Search Pro only. Rating, review count, and price level are Enterprise.
+// Text Search Pro. Rating, review count, and price level are Enterprise.
 const FIELD_MASK = [
   'places.id',
   'places.displayName',
@@ -10,16 +17,23 @@ const FIELD_MASK = [
   'places.location',
   'places.timeZone',
 ].join(',');
+const ID_FIELD_MASK = 'places.id';
 const MAX_RESULTS = 5;
 
-function searchRequest(query, key) {
+function hasOwnKey(aiClient) {
+  if (!aiClient || aiClient.source !== 'user' || aiClient.supported === false) return false;
+  const key = aiClient.apiKey;
+  return typeof key === 'string' && key.trim().length > 0;
+}
+
+function searchRequest(query, key, fieldMask) {
   return {
     url: SEARCH_URL,
     body: { textQuery: query, pageSize: MAX_RESULTS },
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': key,
-      'X-Goog-FieldMask': FIELD_MASK,
+      'X-Goog-FieldMask': fieldMask,
     },
   };
 }
@@ -65,11 +79,13 @@ function ianaTimeZone(place) {
   return null;
 }
 
-function rowFromPlace(place) {
+function rowFromPlace(place, idOnly) {
   if (!place || typeof place !== 'object') return null;
   const googlePlaceId = placeIdOf(place);
+  if (!googlePlaceId) return null;
+  if (idOnly) return { googlePlaceId };
   const name = textOf(place.displayName);
-  if (!googlePlaceId || !name) return null;
+  if (!name) return null;
   return {
     googlePlaceId,
     name,
@@ -78,7 +94,7 @@ function rowFromPlace(place) {
   };
 }
 
-function placesFromPayload(payload) {
+function placesFromPayload(payload, idOnly) {
   let data = payload;
   if (typeof payload === 'string') {
     try {
@@ -96,7 +112,7 @@ function placesFromPayload(payload) {
   const rows = Array.isArray(data.places) ? data.places : [];
   const places = [];
   for (const place of rows) {
-    const row = rowFromPlace(place);
+    const row = rowFromPlace(place, idOnly);
     if (!row) continue;
     places.push(row);
     if (places.length >= MAX_RESULTS) break;
@@ -116,9 +132,24 @@ async function defaultPost(url, body, headers) {
   };
 }
 
-// Places API (New) Text Search Pro. Returns googlePlaceId, name, address, and timeZone.
-// Does not write a plan or an activity.
-async function searchPlaces(query, { post } = {}) {
+async function recordInsufficient(userId) {
+  const id = typeof userId === 'string' ? userId.trim() : '';
+  if (!id) return;
+  await recordAiUsage({
+    userId: id,
+    feature: 'placeSearch',
+    provider: 'google',
+    usedUserKey: false,
+    success: false,
+    error: INSUFFICIENT_MESSAGE,
+  });
+}
+
+// Places API (New) Text Search. A server-key balance above zero uses Pro and
+// deducts 0.5 after a successful response. Zero uses Essentials (IDs Only)
+// and deducts nothing. A user-owned key stays on Pro and does not change the
+// balance. Does not write a plan or an activity.
+async function searchPlaces(query, { post, userId, aiClient } = {}) {
   const key = googleMapsKey();
   if (!key) {
     return { status: 503, msg: 'Google Maps is not configured' };
@@ -128,7 +159,14 @@ async function searchPlaces(query, { post } = {}) {
     return { status: 400, msg: 'Query is required' };
   }
 
-  const request = searchRequest(q, key);
+  const ownKey = hasOwnKey(aiClient);
+  let idOnly = false;
+  if (!ownKey) {
+    const balance = await getBalance(userId);
+    idOnly = !(balance > 0);
+  }
+
+  const request = searchRequest(q, key, idOnly ? ID_FIELD_MASK : FIELD_MASK);
   const fetchPlaces = post || defaultPost;
   let res;
   try {
@@ -137,10 +175,17 @@ async function searchPlaces(query, { post } = {}) {
     return { status: 502, msg: 'Could not search places' };
   }
 
-  const parsed = placesFromPayload(res && res.body);
+  const parsed = placesFromPayload(res && res.body, idOnly);
   if (parsed.error || !res || res.status < 200 || res.status >= 300) {
     const msg = redactKey(parsed.error || 'Could not search places', key);
     return { status: 502, msg };
+  }
+  if (idOnly) {
+    await recordInsufficient(userId);
+    return { status: 200, places: parsed.places, idOnly: true };
+  }
+  if (!ownKey) {
+    await deduct(userId, PLACES_CREDIT_COST);
   }
   return { status: 200, places: parsed.places };
 }
@@ -151,5 +196,6 @@ module.exports = {
   placesFromPayload,
   SEARCH_URL,
   FIELD_MASK,
+  ID_FIELD_MASK,
   MAX_RESULTS,
 };

@@ -12,13 +12,18 @@ const User = require('../models/User');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
-const { SEARCH_URL, FIELD_MASK } = require('../utils/placeAutocomplete');
+const AiUsage = require('../models/AiUsage');
+const { getBalance } = require('../utils/aiCredits');
+const { SEARCH_URL, FIELD_MASK, ID_FIELD_MASK } = require('../utils/placeAutocomplete');
 
 jest.setTimeout(30000);
 
 let mongo;
 const previousKey = process.env.GOOGLE_MAPS_API_KEY;
+const previousSecret = process.env.AI_KEY_ENCRYPTION_SECRET;
 const PLACE_ID = 'ChIJISz8NjyuEmsRFTQ9Iw7Ear8';
+const SECRET = '0123456789abcdef0123456789abcdef';
+const USER_KEY = 'user-xai-key-9f3c2a7b-do-not-echo';
 
 const PRO_FIELD_MASK = [
   'places.id',
@@ -104,21 +109,33 @@ beforeAll(async () => {
   await mongoose.connect(mongo.getUri());
 });
 
+async function setCredits(userId, amount) {
+  await User.updateOne(
+    { _id: userId },
+    { $set: { aiCredits: amount, monthlyCredits: amount, purchasedCredits: 0 } },
+  );
+}
+
 afterEach(async () => {
   axios.post.mockReset();
   if (previousKey == null) delete process.env.GOOGLE_MAPS_API_KEY;
   else process.env.GOOGLE_MAPS_API_KEY = previousKey;
+  if (previousSecret == null) delete process.env.AI_KEY_ENCRYPTION_SECRET;
+  else process.env.AI_KEY_ENCRYPTION_SECRET = previousSecret;
   await Promise.all([
     User.deleteMany({}),
     Plan.deleteMany({}),
     PlanUser.deleteMany({}),
     Invitation.deleteMany({}),
+    AiUsage.deleteMany({}),
   ]);
 });
 
 afterAll(async () => {
   if (previousKey == null) delete process.env.GOOGLE_MAPS_API_KEY;
   else process.env.GOOGLE_MAPS_API_KEY = previousKey;
+  if (previousSecret == null) delete process.env.AI_KEY_ENCRYPTION_SECRET;
+  else process.env.AI_KEY_ENCRYPTION_SECRET = previousSecret;
   await mongoose.disconnect();
   if (mongo) await mongo.stop();
 });
@@ -146,6 +163,7 @@ describe('GET /api/places/autocomplete', () => {
       'grace-places@example.com',
       'Collaborator',
     );
+    await setCredits(grace.userId, 2);
 
     const found = await request(app)
       .get('/api/places/autocomplete')
@@ -179,6 +197,94 @@ describe('GET /api/places/autocomplete', () => {
     expect(url).not.toContain('test-key');
     expect(JSON.stringify(body)).not.toContain('test-key');
     expect(JSON.stringify(found.body)).not.toContain('test-key');
+    expect(await getBalance(grace.userId)).toBe(1.5);
+    expect(await AiUsage.countDocuments({ feature: 'placeSearch' })).toBe(0);
+  });
+
+  test('a zero balance uses the ID-only mask and does not deduct', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        places: [
+          {
+            id: PLACE_ID,
+            displayName: { text: 'Cafe Paris' },
+            formattedAddress: 'Paris, France',
+            timeZone: { id: 'Europe/Paris' },
+          },
+        ],
+      },
+    });
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-zero-places@example.com',
+    });
+    await createPlan(ada.token);
+    await setCredits(ada.userId, 0);
+
+    const found = await request(app)
+      .get('/api/places/autocomplete')
+      .query({ q: 'Cafe Paris' })
+      .set('Authorization', `Bearer ${ada.token}`);
+
+    expect(found.status).toBe(200);
+    expect(found.body).toEqual({
+      message: 'Insufficient AI credits',
+      places: [{ googlePlaceId: PLACE_ID }],
+    });
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    const [url, body, options] = axios.post.mock.calls[0];
+    expect(url).toBe(SEARCH_URL);
+    expect(body).toEqual({ textQuery: 'Cafe Paris', pageSize: 5 });
+    expect(ID_FIELD_MASK).toBe('places.id');
+    expect(options.headers['X-Goog-FieldMask']).toBe(ID_FIELD_MASK);
+    expect(options.headers['X-Goog-FieldMask']).not.toMatch(
+      /displayName|formattedAddress|location|timeZone|rating|userRatingCount|priceLevel/,
+    );
+    expect(await getBalance(ada.userId)).toBe(0);
+    const rows = await AiUsage.find({ feature: 'placeSearch' }).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].success).toBe(false);
+    expect(rows[0].error).toBe('Insufficient AI credits');
+    expect(rows[0].provider).toBe('google');
+    expect(rows[0].credits == null).toBe(true);
+  });
+
+  test('a user-owned key stays on Pro and does not change the balance', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+    process.env.AI_KEY_ENCRYPTION_SECRET = SECRET;
+    axios.post.mockResolvedValue(googleOk());
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-own-key-places@example.com',
+    });
+    await createPlan(ada.token);
+    await setCredits(ada.userId, 0);
+    const saved = await request(app)
+      .put('/api/users/me/ai-settings')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ aiProvider: 'xai', apiKey: USER_KEY });
+    expect(saved.status).toBe(200);
+
+    const found = await request(app)
+      .get('/api/places/autocomplete')
+      .query({ q: 'Cafe Paris' })
+      .set('Authorization', `Bearer ${ada.token}`);
+
+    expect(found.status).toBe(200);
+    expect(found.body[0]).toEqual({
+      googlePlaceId: PLACE_ID,
+      name: 'Cafe Paris',
+      address: 'Paris, France',
+      timeZone: 'Europe/Paris',
+    });
+    const options = axios.post.mock.calls[0][2];
+    expect(options.headers['X-Goog-FieldMask']).toBe(PRO_FIELD_MASK);
+    expect(await getBalance(ada.userId)).toBe(0);
+    expect(await AiUsage.countDocuments({ feature: 'placeSearch' })).toBe(0);
   });
 
   test('a missing key returns a clear error and does not call Google', async () => {
