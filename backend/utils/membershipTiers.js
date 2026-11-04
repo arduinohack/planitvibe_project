@@ -18,9 +18,9 @@ const TIER_CAP = {
 };
 
 const TIER_CREDITS = {
-  planitvibe: 50,
-  plus: 100,
-  pro: 300,
+  planitvibe: 16,
+  plus: 20,
+  pro: 50,
 };
 
 const TIER_RANK = {
@@ -73,7 +73,7 @@ function nextTier(tier) {
 function tierForPack(pack) {
   const text = typeof pack === 'string' ? pack.trim() : '';
   if (text === 'planitvibe') return TIER_PLANITVIBE;
-  if (text === 'plus_monthly' || text === 'plus_yearly') return TIER_PLUS;
+  if (text === 'plus') return TIER_PLUS;
   if (text === 'pro') return TIER_PRO;
   return '';
 }

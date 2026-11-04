@@ -5,7 +5,6 @@ const User = require('../models/User');
 const {
   resolveTier,
   tierCredits,
-  tierForPack,
   tierRank,
 } = require('./membershipTiers');
 
@@ -14,9 +13,41 @@ const CREDIT_PACKS = {
   500: 500,
 };
 
-const PLUS_GRANT = 100;
+const PACKS = {
+  planitvibe: {
+    mode: 'subscription',
+    env: 'STRIPE_PRICE_PLANITVIBE_MONTHLY',
+    type: 'planitvibe',
+  },
+  plus: {
+    mode: 'subscription',
+    env: 'STRIPE_PRICE_PLANITVIBE_PLUS_MONTHLY',
+    type: 'plus',
+  },
+  pro: {
+    mode: 'subscription',
+    env: 'STRIPE_PRICE_PLANITVIBE_PRO_MONTHLY',
+    type: 'pro',
+  },
+  '100': {
+    mode: 'payment',
+    env: 'STRIPE_PRICE_PLANITVIBE_CREDITS_100',
+    type: 'credits_100',
+  },
+  '500': {
+    mode: 'payment',
+    env: 'STRIPE_PRICE_PLANITVIBE_CREDITS_500',
+    type: 'credits_500',
+  },
+};
 
-const BAD_PACK = 'Pack must be 100 or 500';
+const TIER_PRICE_ENV = {
+  planitvibe: 'STRIPE_PRICE_PLANITVIBE_MONTHLY',
+  plus: 'STRIPE_PRICE_PLANITVIBE_PLUS_MONTHLY',
+  pro: 'STRIPE_PRICE_PLANITVIBE_PRO_MONTHLY',
+};
+
+const BAD_PACK = 'Pack must be planitvibe, plus, pro, 100, or 500';
 const BAD_SIGNATURE = 'Invalid signature';
 const NOT_CONFIGURED = 'Credit packs are not configured';
 const CHECKOUT_FAILED = 'Could not start checkout';
@@ -26,37 +57,15 @@ function envValue(name) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function packCredits(pack) {
-  const text = typeof pack === 'number' && Number.isFinite(pack)
-    ? String(pack)
-    : typeof pack === 'string'
-      ? pack.trim()
-      : '';
-  if (text === '100') return CREDIT_PACKS[100];
-  if (text === '500') return CREDIT_PACKS[500];
+function packSpec(pack) {
+  if (typeof pack !== 'string') return null;
+  return PACKS[pack.trim()] || null;
+}
+
+function creditsForType(type) {
+  if (type === 'credits_100') return CREDIT_PACKS[100];
+  if (type === 'credits_500') return CREDIT_PACKS[500];
   return 0;
-}
-
-function priceEnv(credits) {
-  if (credits === 100) return 'STRIPE_PRICE_CREDITS_100';
-  if (credits === 500) return 'STRIPE_PRICE_CREDITS_500';
-  return '';
-}
-
-function priceForPack(pack) {
-  const text = typeof pack === 'string' ? pack.trim() : '';
-  if (text === 'planitvibe') return envValue('STRIPE_PRICE_PLANITVIBE');
-  if (text === 'pro') return envValue('STRIPE_PRICE_PRO');
-  if (text === 'plus_yearly') return envValue('STRIPE_PRICE_PLUS_YEARLY');
-  if (text === 'plus_monthly') {
-    return envValue('STRIPE_PRICE_PLUS') || envValue('STRIPE_PRICE_PLUS_MONTHLY');
-  }
-  return '';
-}
-
-function metadataType(tier) {
-  if (tier === 'planitvibe' || tier === 'plus' || tier === 'pro') return tier === 'plus' ? 'plus' : tier;
-  return '';
 }
 
 function stripeClient() {
@@ -118,50 +127,23 @@ function unixDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function createPlusCheckout(userId, pack, tier) {
-  const price = priceForPack(pack);
+async function createCreditCheckout({ userId, pack }) {
+  const spec = packSpec(pack);
+  if (!spec) return { status: 400, body: { message: BAD_PACK } };
+  const price = envValue(spec.env);
   const stripe = stripeClient();
   if (!stripe || !price) return { status: 503, body: { message: NOT_CONFIGURED } };
   try {
-    const metadata = { userId, type: metadataType(tier), priceId: price };
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
+    const metadata = { userId, type: spec.type, priceId: price };
+    const payload = {
+      mode: spec.mode,
       line_items: [{ price, quantity: 1 }],
       client_reference_id: userId,
       metadata,
-      subscription_data: { metadata },
       ...returnUrls(),
-    });
-    const url = session && typeof session.url === 'string' ? session.url.trim() : '';
-    if (!url) return { status: 502, body: { message: CHECKOUT_FAILED } };
-    return { status: 200, body: { url } };
-  } catch (err) {
-    const message = err && err.message ? err.message : 'request failed';
-    logger.error(`Stripe checkout failed: ${message}`, {
-      event: 'StripeCheckout',
-      userId,
-    });
-    return { status: 502, body: { message: CHECKOUT_FAILED } };
-  }
-}
-
-async function createCreditCheckout({ userId, pack }) {
-  if (typeof pack !== 'string') return { status: 400, body: { message: BAD_PACK } };
-  const tier = tierForPack(pack);
-  if (tier) return createPlusCheckout(userId, pack.trim(), tier);
-  const credits = packCredits(pack);
-  if (!credits) return { status: 400, body: { message: BAD_PACK } };
-  const price = envValue(priceEnv(credits));
-  const stripe = stripeClient();
-  if (!stripe || !price) return { status: 503, body: { message: NOT_CONFIGURED } };
-  try {
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      line_items: [{ price, quantity: 1 }],
-      client_reference_id: userId,
-      metadata: { userId, credits: String(credits) },
-      ...returnUrls(),
-    });
+    };
+    if (spec.mode === 'subscription') payload.subscription_data = { metadata };
+    const session = await stripe.checkout.sessions.create(payload);
     const url = session && typeof session.url === 'string' ? session.url.trim() : '';
     if (!url) return { status: 502, body: { message: CHECKOUT_FAILED } };
     return { status: 200, body: { url } };
@@ -229,25 +211,15 @@ function linePriceId(line) {
 }
 
 function configuredTierPrices() {
-  return [
-    envValue('STRIPE_PRICE_PLANITVIBE'),
-    envValue('STRIPE_PRICE_PLUS'),
-    envValue('STRIPE_PRICE_PLUS_MONTHLY'),
-    envValue('STRIPE_PRICE_PLUS_YEARLY'),
-    envValue('STRIPE_PRICE_PRO'),
-  ].filter(Boolean);
+  return Object.values(TIER_PRICE_ENV).map((name) => envValue(name)).filter(Boolean);
 }
 
 function tierFromPriceId(priceId) {
   if (!priceId) return '';
-  if (priceId === envValue('STRIPE_PRICE_PLANITVIBE')) return 'planitvibe';
-  if (priceId === envValue('STRIPE_PRICE_PRO')) return 'pro';
-  const plusPrices = [
-    envValue('STRIPE_PRICE_PLUS'),
-    envValue('STRIPE_PRICE_PLUS_MONTHLY'),
-    envValue('STRIPE_PRICE_PLUS_YEARLY'),
-  ].filter(Boolean);
-  if (plusPrices.includes(priceId)) return 'plus';
+  for (const [tier, name] of Object.entries(TIER_PRICE_ENV)) {
+    const configured = envValue(name);
+    if (configured && priceId === configured) return tier;
+  }
   return '';
 }
 
@@ -505,7 +477,7 @@ async function applyPlusCheckout(event, session) {
   const invoiceId = stripeId(session.invoice);
   const sessionId = textId(session.id);
   const tier = tierFromMetadata(session) || tierFromPriceId(priceId) || 'plus';
-  const credits = tierCredits(tier) || PLUS_GRANT;
+  const credits = tierCredits(tier);
   await runOnce(eventId, { sessionId, userId, credits }, async () => {
     await markPlus({
       userId,
@@ -559,7 +531,7 @@ async function applyPlusInvoice(event) {
   const subscriptionId = subscriptionIdOfInvoice(invoice);
   const periodEnd = periodEndFromInvoice(invoice);
   const tier = tierFromInvoice(invoice);
-  const credits = tierCredits(tier) || PLUS_GRANT;
+  const credits = tierCredits(tier);
   await runOnce(eventId, { sessionId: invoiceId, userId, credits }, async () => {
     await markPlus({
       userId,
@@ -640,12 +612,24 @@ async function applyCheckoutEvent(event) {
   if (event.type !== 'checkout.session.completed') return;
   const session = event.data && event.data.object;
   if (!session || session.payment_status !== 'paid') return;
+  const type = metaType(session);
+  const credits = creditsForType(type);
+  if (credits) {
+    await applyCreditCheckout(event, session, credits);
+    return;
+  }
   if (isPlusSession(session)) {
     await applyPlusCheckout(event, session);
     return;
   }
+  logger.error('Stripe checkout session was missing a user or pack', {
+    event: 'StripeWebhook',
+    context: { eventId: textId(event.id) },
+  });
+}
+
+async function applyCreditCheckout(event, session, credits) {
   const userId = sessionUserId(session);
-  const credits = packCredits(session.metadata && session.metadata.credits);
   const eventId = typeof event.id === 'string' ? event.id.trim() : '';
   if (!eventId || !userId || !credits) {
     logger.error('Stripe checkout session was missing a user or pack', {
