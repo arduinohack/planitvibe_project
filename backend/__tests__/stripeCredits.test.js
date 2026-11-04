@@ -491,7 +491,10 @@ describe('Plus subscription', () => {
           mode: 'subscription',
           payment_status: 'paid',
           customer: 'cus_plus',
-          subscription: { id: 'sub_plus', current_period_end: period3 },
+          subscription: {
+            id: 'sub_plus',
+            items: { data: [{ current_period_end: period3 }] },
+          },
           metadata: plusMetadata(ada.userId, PRICE_PLUS),
         },
       },

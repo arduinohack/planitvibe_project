@@ -280,12 +280,17 @@ function tierFromInvoice(invoice) {
   return fromPrice || 'plus';
 }
 
+function periodEndFromSubscription(subscription) {
+  const item = lineItems(subscription)[0];
+  return unixDate(item && item.current_period_end);
+}
+
 function periodEndFromSession(session) {
   const direct = unixDate(session && session.current_period_end);
   if (direct) return direct;
   const subscription = session && session.subscription;
   if (subscription && typeof subscription === 'object') {
-    return unixDate(subscription.current_period_end);
+    return periodEndFromSubscription(subscription);
   }
   return null;
 }
@@ -599,7 +604,7 @@ async function applyPlusSubscription(event) {
       customerId,
       subscriptionId,
       priceId,
-      periodEnd: unixDate(subscription.current_period_end),
+      periodEnd: periodEndFromSubscription(subscription),
       active: true,
       status,
       tier,
