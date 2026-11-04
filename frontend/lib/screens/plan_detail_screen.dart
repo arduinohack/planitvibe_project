@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:board_datetime_picker/board_datetime_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
 import '../utils/ai_command_history.dart';
 import '../utils/activity_chain.dart';
+import '../utils/activity_clock_sheet.dart';
 import '../utils/activity_time.dart';
 import '../utils/itinerary_cache.dart';
 import '../utils/itinerary_cache_binding.dart';
@@ -1493,7 +1495,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     DateTime? initialStart,
     DateTime? initialEnd,
     DateTime? aboveInstant,
-    String? initialZone,
+    String? priorEndZone,
     bool useDefaultStart = true,
   }) async {
     final planProvider = Provider.of<PlanProvider>(context, listen: false);
@@ -1517,13 +1519,9 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     final openingEnd = useDefaultStart
         ? (previousStart == null ? openingStart : null)
         : (initialEnd ?? initialStart);
-    var openingZone = initialZone?.trim() ?? '';
-    if (openingZone.isEmpty && useDefaultStart && rows.isNotEmpty) {
-      final previous = rows.last;
-      final storedType = previous.typeLabel.trim().toLowerCase();
-      if (storedType == 'flight' || previous.type.name == 'flight') {
-        openingZone = _activityEndZone(previous, _shownPlan(planProvider).timeZone);
-      }
+    var openingPrior = priorEndZone?.trim() ?? '';
+    if (useDefaultStart && rows.isNotEmpty) {
+      openingPrior = _activityEndZone(rows.last, planZone);
     }
     final draft = await showDialog<_ActivityFields>(
       context: context,
@@ -1537,7 +1535,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
         initialEnd: openingEnd,
         aboveInstant: openingAbove,
         fallbackStart: fallbackStart,
-        initialZone: openingZone.isEmpty ? null : openingZone,
+        priorEndZone: openingPrior.isEmpty ? null : openingPrior,
       ),
     );
     if (draft == null || !mounted) return;
@@ -2048,7 +2046,6 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     int? dragIndex,
   }) {
     final activityId = activity.id;
-    final startZone = _activityStartZone(activity, planZone);
     final endZone = _activityEndZone(activity, planZone);
     final cardLines = _activityCardContent(
       activity,
@@ -2148,16 +2145,22 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                                     planTimeZone: planZone,
                                   )
                                 : _insertAnchorAbove(storedIndex, activity);
-                            final zone = atTop && planZone.trim().isNotEmpty
-                                ? planZone
-                                : startZone;
+                            String? priorZone;
+                            if (!atTop &&
+                                storedIndex > 0 &&
+                                storedIndex <= rows.length) {
+                              priorZone = _activityEndZone(
+                                rows[storedIndex - 1],
+                                planZone,
+                              );
+                            }
                             _addActivity(
                               insertBefore: activityId,
                               insertIndex: storedIndex,
                               initialStart: anchor,
                               initialEnd: anchor,
                               aboveInstant: atTop ? null : anchor,
-                              initialZone: zone,
+                              priorEndZone: priorZone,
                               useDefaultStart: false,
                             );
                           },
@@ -2178,7 +2181,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               initialStart: anchor,
                               initialEnd: anchor,
                               aboveInstant: anchor,
-                              initialZone: endZone,
+                              priorEndZone: endZone,
                               useDefaultStart: false,
                             );
                           },
@@ -2208,7 +2211,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                           if (dragHandle != null || actions.isNotEmpty)
                             Row(
                               children: [
-                                if (dragHandle != null) dragHandle,
+                                ?dragHandle,
                                 ...actions,
                               ],
                             ),
@@ -2217,7 +2220,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                     }
                     return Row(
                       children: [
-                        if (dragHandle != null) dragHandle,
+                        ?dragHandle,
                         Expanded(child: name),
                         ...actions,
                       ],
@@ -3928,7 +3931,7 @@ class _ActivityFormDialog extends StatefulWidget {
   final DateTime? chainStart;
   final DateTime? aboveInstant;
   final DateTime? fallbackStart;
-  final String? initialZone;
+  final String? priorEndZone;
 
   const _ActivityFormDialog({
     required this.title,
@@ -3942,7 +3945,7 @@ class _ActivityFormDialog extends StatefulWidget {
     this.chainStart,
     this.aboveInstant,
     this.fallbackStart,
-    this.initialZone,
+    this.priorEndZone,
   });
 
   bool get isScreen => activity != null;
@@ -3954,6 +3957,8 @@ class _ActivityFormDialog extends StatefulWidget {
 class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _durationController;
+  late final TextEditingController _durationHoursController;
+  late final TextEditingController _durationMinutesPartController;
   late final TextEditingController _locationController;
   late final TextEditingController _googlePlaceIdController;
   late final TextEditingController _placeSearchController;
@@ -3976,6 +3981,11 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   late String _startZone;
   late String _endZone;
   bool _endZoneCustom = false;
+  bool _startZonePicked = false;
+  bool _endZonePicked = false;
+  String _placeZone = '';
+  bool _pickerEditsEnd = false;
+  int _pickerGeneration = 0;
   DateTime? _start;
   DateTime? _end;
   bool _startChanged = false;
@@ -4023,6 +4033,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _end = widget.initialEnd;
     }
     _durationController = TextEditingController(text: _storedDurationText(activity));
+    _durationHoursController = TextEditingController();
+    _durationMinutesPartController = TextEditingController();
     _locationController = TextEditingController(text: activity?.location ?? '');
     _googlePlaceIdController = TextEditingController(
       text: activity?.googlePlaceId ?? '',
@@ -4060,11 +4072,84 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     _baggageController = TextEditingController(text: activity?.baggageClaim ?? '');
     _roomController = TextEditingController(text: activity?.roomNumber ?? '');
     _type = _storedActivityType(activity);
-    _startZone = _openingStartZone(activity);
-    _endZone = _openingEndZone(activity, _startZone);
-    _endZoneCustom = _endZone != _startZone;
+    if (activity == null) {
+      final zones = resolveActivityZones(
+        placeZone: _placeZone,
+        priorEndZone: widget.priorEndZone,
+        planZone: widget.planTimeZone,
+      );
+      _startZone = zones.startZone;
+      _endZone = zones.endZone;
+      _startZonePicked = false;
+      _endZonePicked = false;
+      _endZoneCustom = false;
+    } else {
+      _startZone = _openingStartZone(activity);
+      _endZone = _openingEndZone(activity, _startZone);
+      _startZonePicked = true;
+      _endZonePicked = true;
+      _endZoneCustom = _endZone != _startZone;
+    }
     _loadStoredLegs(activity);
+    if (!_usesFlightFields) {
+      final minutes = _wholeMinutes(_durationController.text);
+      if (_start != null && minutes != null) {
+        final opened = openActivityTimes(
+          start: _start,
+          durationMinutes: minutes,
+        );
+        if (activity != null && !_sameUtcMinute(_end, opened.end)) {
+          _endChanged = true;
+        }
+        _end = opened.end;
+      }
+    }
+    _mirrorDurationParts();
     _openedForm = _formSignature();
+  }
+
+  bool _sameUtcMinute(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.toUtc().millisecondsSinceEpoch ~/ 60000 ==
+        b.toUtc().millisecondsSinceEpoch ~/ 60000;
+  }
+
+  ActivityTimeDraft _timeDraft() {
+    return ActivityTimeDraft(
+      start: _start,
+      end: _end,
+      durationMinutes: _wholeMinutes(_durationController.text),
+    );
+  }
+
+  void _setDurationPartText(int minutes) {
+    final sign = minutes < 0 ? -1 : 1;
+    final absMinutes = minutes.abs();
+    _durationHoursController.text = '${sign * (absMinutes ~/ 60)}';
+    _durationMinutesPartController.text = '${sign * (absMinutes % 60)}';
+  }
+
+  void _mirrorDurationParts() {
+    final text = _durationController.text.trim();
+    if (text.isEmpty) {
+      _durationHoursController.clear();
+      _durationMinutesPartController.clear();
+      return;
+    }
+    final minutes = int.tryParse(text);
+    if (minutes == null) return;
+    _setDurationPartText(minutes);
+  }
+
+  void _setDurationFields(int? minutes) {
+    if (minutes == null) {
+      _durationController.clear();
+      _durationHoursController.clear();
+      _durationMinutesPartController.clear();
+      return;
+    }
+    _durationController.text = '$minutes';
+    _setDurationPartText(minutes);
   }
 
   String _formToken(String value) => '${value.length}:$value;';
@@ -4250,8 +4335,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       final stored = activity.timeZone.trim();
       if (stored.isNotEmpty) return stored;
     }
-    final copied = widget.initialZone?.trim() ?? '';
-    if (copied.isNotEmpty) return copied;
     return _planOrUtc();
   }
 
@@ -4280,6 +4363,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   void dispose() {
     _nameController.dispose();
     _durationController.dispose();
+    _durationHoursController.dispose();
+    _durationMinutesPartController.dispose();
     _locationController.dispose();
     _placeSearchTimer?.cancel();
     _googlePlaceIdController.dispose();
@@ -4311,8 +4396,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (zone == _startZone) return;
     setState(() {
       _startZone = zone;
+      _startZonePicked = true;
       if (!_endZoneCustom) _endZone = zone;
       _error = null;
+      if (!_pickerEditsEnd) _pickerGeneration++;
     });
   }
 
@@ -4321,8 +4408,49 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     setState(() {
       _endZone = zone;
       _endZoneCustom = true;
+      _endZonePicked = true;
       _error = null;
+      if (_pickerEditsEnd) _pickerGeneration++;
     });
+  }
+
+  void _pickActivityStartZone(String zone) {
+    if (_usesFlightFields) {
+      _onStartZone(zone);
+      return;
+    }
+    if (zone == _startZone) return;
+    setState(() {
+      _startZone = zone;
+      _startZonePicked = true;
+      _error = null;
+      if (!_pickerEditsEnd) _pickerGeneration++;
+    });
+  }
+
+  void _pickActivityEndZone(String zone) {
+    if (_usesFlightFields && _extraLegs.isNotEmpty) {
+      final index = _extraLegs.length - 1;
+      if (_extraLegs[index].destinationZone == zone) return;
+      _onExtraDestinationZone(index, zone);
+      if (_pickerEditsEnd) setState(() => _pickerGeneration++);
+      return;
+    }
+    _onEndZone(zone);
+  }
+
+  void _applyPlaceZone(String zone) {
+    _placeZone = zone.trim();
+    if (_endZonePicked) return;
+    final zones = resolveActivityZones(
+      placeZone: _placeZone,
+      priorEndZone: widget.priorEndZone,
+      planZone: widget.planTimeZone,
+      explicitStartZone: _startZonePicked ? _startZone : null,
+    );
+    _startZone = zones.startZone;
+    _endZone = zones.endZone;
+    if (_pickerEditsEnd) _pickerGeneration++;
   }
 
   void _setStart(DateTime instant) {
@@ -4338,26 +4466,26 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
           _endChanged = true;
         }
         _syncShownDuration();
+        if (_pickerEditsEnd) _pickerGeneration++;
       });
       return;
     }
-    final typed = _wholeMinutes(_durationController.text);
-    final previousStart = _start;
-    final previousEnd = _end;
-    var preserved = typed;
-    if (preserved == null &&
-        previousStart != null &&
-        previousEnd != null &&
-        !previousEnd.isBefore(previousStart)) {
-      preserved = previousEnd.difference(previousStart).inMinutes;
-    }
+    final next = recalculateActivityTimes(
+      current: _timeDraft(),
+      edited: ActivityTimeEdit.start,
+      start: value,
+    );
+    final movedEnd = next.end != _end;
     setState(() {
-      _start = value;
+      _start = next.start;
       _startChanged = true;
       _error = null;
-      if (preserved != null) {
-        _end = value.add(Duration(minutes: preserved));
+      if (next.durationMinutes != null || movedEnd) {
+        _end = next.end;
         _endChanged = true;
+      }
+      if (_pickerEditsEnd && (next.durationMinutes != null || movedEnd)) {
+        _pickerGeneration++;
       }
     });
   }
@@ -4373,14 +4501,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       });
       return;
     }
+    final next = recalculateActivityTimes(
+      current: _timeDraft(),
+      edited: ActivityTimeEdit.end,
+      end: value,
+    );
     setState(() {
-      _end = value;
+      _end = next.end;
       _endChanged = true;
       _error = null;
-      final start = _start;
-      if (start != null) {
-        _durationController.text = value.difference(start).inMinutes.toString();
-      }
+      _setDurationFields(next.durationMinutes);
     });
   }
 
@@ -4389,6 +4519,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _start = null;
       _startChanged = true;
       _error = null;
+      if (!_pickerEditsEnd) _pickerGeneration++;
     });
   }
 
@@ -4396,23 +4527,55 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     setState(() {
       _end = null;
       _endChanged = true;
-      if (!_usesFlightFields) _durationController.clear();
+      if (!_usesFlightFields) _setDurationFields(null);
       _error = null;
+      if (_pickerEditsEnd) _pickerGeneration++;
     });
   }
 
-  void _onDurationChanged(String text) {
-    if (_usesFlightFields) return;
-    final minutes = _wholeMinutes(text);
-    final start = _start;
-    if (minutes == null || start == null) {
+  void _onDurationPartsChanged() {
+    final hoursText = _durationHoursController.text.trim();
+    final minutesText = _durationMinutesPartController.text.trim();
+    final hoursInvalid = hoursText.isNotEmpty && int.tryParse(hoursText) == null;
+    final minutesInvalid =
+        minutesText.isNotEmpty && int.tryParse(minutesText) == null;
+    if (hoursInvalid || minutesInvalid) {
+      _durationController.text = 'bad';
       setState(() => _error = null);
       return;
     }
+    if (hoursText.isEmpty && minutesText.isEmpty) {
+      _durationController.clear();
+      setState(() => _error = null);
+      return;
+    }
+    final hours = hoursText.isEmpty ? 0 : int.parse(hoursText);
+    final minutes = minutesText.isEmpty ? 0 : int.parse(minutesText);
+    final total = hours * 60 + minutes;
+    _durationController.text = '$total';
+    _onDurationChanged('$total');
+  }
+
+  void _onDurationChanged(String text) {
+    if (_usesFlightFields) {
+      setState(() => _error = null);
+      return;
+    }
+    final minutes = int.tryParse(text.trim());
+    if (minutes == null || _start == null) {
+      setState(() => _error = null);
+      return;
+    }
+    final next = recalculateActivityTimes(
+      current: _timeDraft(),
+      edited: ActivityTimeEdit.duration,
+      durationMinutes: minutes,
+    );
     setState(() {
-      _end = start.add(Duration(minutes: minutes));
+      _end = next.end;
       _endChanged = true;
       _error = null;
+      if (_pickerEditsEnd) _pickerGeneration++;
     });
   }
 
@@ -4439,6 +4602,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     final end = _extraLegs.isEmpty ? _end : _extraLegs.last.arrival;
     if (start != null && end != null && !end.isBefore(start)) {
       _durationController.text = end.difference(start).inMinutes.toString();
+      _mirrorDurationParts();
     }
   }
 
@@ -4843,6 +5007,8 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       }
     }
     _syncShownDuration();
+    _mirrorDurationParts();
+    _pickerGeneration++;
     _error = null;
   }
 
@@ -5120,6 +5286,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         _googlePlaceIdController.text = filled.googlePlaceId;
       }
       _detailsController.text = filled.details;
+      _applyPlaceZone(picked.timeZone);
     });
   }
 
@@ -5140,6 +5307,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _placeSuggestions = const [];
       _placeSearchError = null;
       _placeSearchController.text = place.name;
+      _applyPlaceZone(place.timeZone);
     });
   }
 
@@ -5386,6 +5554,271 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     }
   }
 
+  DateTime _wallDate(DateTime instant, String zone) {
+    final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+    final clock = clockInZone(instant.toUtc(), named);
+    return DateTime(clock.year, clock.month, clock.day, clock.hour, clock.minute);
+  }
+
+  DateTime _pickerSeedInstant() {
+    final planZone = widget.planTimeZone.trim().isEmpty
+        ? 'UTC'
+        : widget.planTimeZone.trim();
+    return widget.aboveInstant ??
+        widget.fallbackStart ??
+        defaultChainStart(existingStarts: const [], planTimeZone: planZone);
+  }
+
+  DateTime _visiblePickerWall() {
+    final instant = _pickerEditsEnd ? _spanEnd : _start;
+    final zone = _pickerEditsEnd ? _lastDestinationZone() : _startZone;
+    return _wallDate(instant ?? _pickerSeedInstant(), zone);
+  }
+
+  DateTime _utcFromWall(DateTime wall, String zone) {
+    final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+    return instantFromWall(
+      year: wall.year,
+      month: wall.month,
+      day: wall.day,
+      hour: wall.hour,
+      minute: wall.minute,
+      zone: named,
+    );
+  }
+
+  String _sheetClockLabel(DateTime? instant, String zone) {
+    if (instant == null) return 'Choose date and time';
+    final clock = clockInZone(instant, zone.trim().isEmpty ? 'UTC' : zone);
+    final month = clock.month.toString().padLeft(2, '0');
+    final day = clock.day.toString().padLeft(2, '0');
+    final hour = clock.hour.toString().padLeft(2, '0');
+    final minute = clock.minute.toString().padLeft(2, '0');
+    return '$month/$day  $hour:$minute';
+  }
+
+  String _zoneAbbrev(DateTime? instant, String zone) {
+    final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+    final abbr = clockInZone(instant ?? DateTime.now().toUtc(), named)
+        .abbreviation
+        .trim();
+    if (abbr.isEmpty) return named;
+    return abbr;
+  }
+
+  void _onEmbeddedPicker(DateTime picked) {
+    final editingEnd = _pickerEditsEnd;
+    final zone = editingEnd ? _lastDestinationZone() : _startZone;
+    final instant = _utcFromWall(picked, zone);
+    final current = editingEnd ? _spanEnd : _start;
+    if (_sameUtcMinute(current, instant)) return;
+    if (editingEnd) {
+      _setSheetEnd(instant);
+      return;
+    }
+    _setStart(instant);
+  }
+
+  void _setSheetEnd(DateTime instant) {
+    if (_usesFlightFields && _extraLegs.isNotEmpty) {
+      _setExtraArrival(_extraLegs.length - 1, instant);
+      return;
+    }
+    _setEnd(instant);
+  }
+
+  void _clearSheetEnd() {
+    if (_usesFlightFields && _extraLegs.isNotEmpty) {
+      _clearExtraArrival(_extraLegs.length - 1);
+      if (_pickerEditsEnd) setState(() => _pickerGeneration++);
+      return;
+    }
+    _clearEnd();
+  }
+
+  void _selectPickerTarget(bool end) {
+    if (end == _pickerEditsEnd) return;
+    setState(() {
+      _pickerEditsEnd = end;
+      _pickerGeneration++;
+    });
+  }
+
+  Widget _zoneMenu({
+    required String id,
+    required DateTime? instant,
+    required String zone,
+    required ValueChanged<String> onZone,
+  }) {
+    final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+    final choices = activityZoneOptions(named);
+    return Tooltip(
+      message: named,
+      child: DropdownButton<String>(
+        key: ValueKey('$id|$named'),
+        value: choices.contains(named) ? named : choices.first,
+        isDense: true,
+        underline: const SizedBox.shrink(),
+        items: [
+          for (final choice in choices)
+            DropdownMenuItem(value: choice, child: Text(choice)),
+        ],
+        selectedItemBuilder: (context) => [
+          for (final choice in choices)
+            Text(_zoneAbbrev(instant, choice)),
+        ],
+        onChanged: (next) {
+          if (next == null) return;
+          onZone(next);
+        },
+      ),
+    );
+  }
+
+  Widget _clockLine({
+    required String label,
+    required DateTime? instant,
+    required String zone,
+    required bool selected,
+    required ValueChanged<String> onZone,
+    required String zoneMenuId,
+    VoidCallback? onClear,
+  }) {
+    final named = zone.trim().isEmpty ? 'UTC' : zone.trim();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(child: Text(_sheetClockLabel(instant, named))),
+          _zoneMenu(
+            id: zoneMenuId,
+            instant: instant,
+            zone: named,
+            onZone: onZone,
+          ),
+          if (onClear != null)
+            TextButton(onPressed: onClear, child: const Text('Clear')),
+        ],
+      ),
+    );
+  }
+
+  Widget _activityClockSheet() {
+    final endInstant = _spanEnd;
+    final endZone = _lastDestinationZone();
+    final durationHint = _usesFlightFields
+        ? 'Length in minutes. The end time still follows the last leg.'
+        : 'How long this activity lasts. A number here sets the end from the start.';
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _clockLine(
+            label: 'Start',
+            instant: _start,
+            zone: _startZone,
+            selected: !_pickerEditsEnd,
+            onZone: _pickActivityStartZone,
+            zoneMenuId: 'activity-start-zone',
+            onClear: widget.isScreen && _start != null ? _clearStart : null,
+          ),
+          _clockLine(
+            label: 'End',
+            instant: endInstant,
+            zone: endZone,
+            selected: _pickerEditsEnd,
+            onZone: _pickActivityEndZone,
+            zoneMenuId: 'activity-end-zone',
+            onClear: widget.isScreen && endInstant != null ? _clearSheetEnd : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(
+                  width: 76,
+                  child: Text(
+                    'Duration',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                ),
+                SizedBox(
+                  width: 72,
+                  child: TextField(
+                    controller: _durationHoursController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      suffixText: 'h',
+                    ),
+                    onChanged: (_) => _onDurationPartsChanged(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 88,
+                  child: TextField(
+                    controller: _durationMinutesPartController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      suffixText: 'min',
+                    ),
+                    onChanged: (_) => _onDurationPartsChanged(),
+                  ),
+                ),
+                _FieldHint(durationHint),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('Start')),
+                ButtonSegment(value: true, label: Text('End')),
+              ],
+              selected: {_pickerEditsEnd},
+              onSelectionChanged: (next) => _selectPickerTarget(next.first),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: BoardDateTimePickerWidget(
+              key: ValueKey(
+                '${_pickerEditsEnd ? 'end' : 'start'}|$_pickerGeneration',
+              ),
+              pickerType: DateTimePickerType.datetime,
+              breakpoint: 4000,
+              initialDate: _visiblePickerWall(),
+              minimumDate: DateTime(2000),
+              maximumDate: DateTime(2100, 12, 31, 23, 59),
+              options: const BoardDateTimeOptions(
+                languages: BoardPickerLanguages.en(),
+                useAmpm: false,
+              ),
+              customCloseButtonBuilder: (context, modal, onClose) =>
+                  const SizedBox.shrink(),
+              onChanged: _onEmbeddedPicker,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _inputWidget(_ActivityInput input) {
     switch (input) {
       case _ActivityInput.type:
@@ -5497,62 +5930,10 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
               : 'Where it arrives.',
         );
       case _ActivityInput.start:
-        return _UtcDateTimePicker(
-          id: 'activity-start',
-          label: 'Start',
-          hint:
-              'When this activity starts. Opens the day and the time together. The clock uses the time zone under it.',
-          tooltip: 'When this activity starts',
-          zoneTooltip: 'Time zone of the origin',
-          value: _start,
-          zone: _startZone,
-          useStartPanel: true,
-          planTimeZone: widget.planTimeZone,
-          aboveInstant: widget.aboveInstant,
-          fallbackStart: widget.fallbackStart,
-          onZoneChanged: _onStartZone,
-          onChanged: _setStart,
-          onClear: widget.isScreen ? _clearStart : null,
-        );
+        return _activityClockSheet();
       case _ActivityInput.end:
-        if (_usesFlightFields && _extraLegs.isNotEmpty) {
-          final lastLeg = _extraLegs.length - 1;
-          return _UtcDateTimePicker(
-            id: 'activity-end',
-            label: 'End',
-            hint: 'When this activity ends. The clock uses the time zone under it.',
-            tooltip: 'When this activity ends',
-            zoneTooltip: 'Time zone of the destination',
-            value: _spanEnd,
-            zone: _extraLegs[lastLeg].destinationZone,
-            onZoneChanged: (zone) => _onExtraDestinationZone(lastLeg, zone),
-            onChanged: (instant) => _setExtraArrival(lastLeg, instant),
-            onClear: widget.isScreen ? () => _clearExtraArrival(lastLeg) : null,
-          );
-        }
-        return _UtcDateTimePicker(
-          id: 'activity-end',
-          label: 'End',
-          hint: 'When this activity ends. The clock uses the time zone under it.',
-          tooltip: 'When this activity or leg ends',
-          zoneTooltip: 'Time zone of the destination',
-          value: _end,
-          zone: _endZone,
-          onZoneChanged: _onEndZone,
-          onChanged: _setEnd,
-          onClear: widget.isScreen ? _clearEnd : null,
-        );
       case _ActivityInput.duration:
-        return _textField(
-          _durationController,
-          'Duration (minutes)',
-          tooltip: 'Length in minutes',
-          hint: _usesFlightFields
-              ? 'Length in minutes. The end time still follows the last leg.'
-              : 'How long this activity lasts, in minutes. A number here sets the end from the start.',
-          number: true,
-          onChanged: _onDurationChanged,
-        );
+        return const SizedBox.shrink();
       case _ActivityInput.legs:
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5738,8 +6119,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   Widget _fieldsColumn() {
     const above = [
       _ActivityInput.start,
-      _ActivityInput.end,
-      _ActivityInput.duration,
       _ActivityInput.details,
       _ActivityInput.cost,
     ];
@@ -5831,9 +6210,16 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         ),
       );
     } else {
+      final screenWidth = MediaQuery.sizeOf(context).width;
+      var sheetWidth = screenWidth - 80;
+      if (sheetWidth < 300) sheetWidth = screenWidth - 32;
+      if (sheetWidth > 520) sheetWidth = 520;
       form = AlertDialog(
         title: Text(widget.title),
-        content: SingleChildScrollView(child: _fieldsColumn()),
+        content: SizedBox(
+          width: sheetWidth,
+          child: SingleChildScrollView(child: _fieldsColumn()),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.maybePop(context),

@@ -153,5 +153,5 @@ List<PlanMember> peopleScreenMembers(List<PlanMember> members) {
       rest.add(member);
     }
   }
-  return [if (owner != null) owner, ...rest];
+  return [?owner, ...rest];
 }

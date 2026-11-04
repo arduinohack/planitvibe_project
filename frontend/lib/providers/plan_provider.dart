@@ -395,12 +395,14 @@ class PlaceSuggestion {
   final String name;
   final String address;
   final String summary;
+  final String timeZone;
 
   const PlaceSuggestion({
     required this.placeId,
     required this.name,
     this.address = '',
     this.summary = '',
+    this.timeZone = '',
   });
 }
 
@@ -2538,6 +2540,7 @@ class PlanProvider extends ChangeNotifier {
             placeId: placeId,
             name: name,
             address: (item['address'] ?? '').toString().trim(),
+            timeZone: (item['timeZone'] ?? '').toString().trim(),
           ),
         );
       }
@@ -2606,6 +2609,7 @@ class PlanProvider extends ChangeNotifier {
             name: name,
             address: (item['address'] ?? '').toString().trim(),
             summary: (item['summary'] ?? '').toString().trim(),
+            timeZone: (item['timeZone'] ?? '').toString().trim(),
           ),
         );
       }

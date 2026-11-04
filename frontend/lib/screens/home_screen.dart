@@ -330,7 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (roleText != null) 'Role: $roleText',
                 'Destination: ${plan.destination}',
                 'Budget: ${formatPlanBudget(plan.budget)}',
-                if (dateLine != null) dateLine,
+                ?dateLine,
               ].join('\n'),
             ),
             onTap: () {
@@ -374,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final lines = [
       if (plan.archiveDescription.trim().isNotEmpty)
         plan.archiveDescription.trim(),
-      if (archivedOn != null) archivedOn,
+      ?archivedOn,
     ];
     return Card(
       child: Column(
