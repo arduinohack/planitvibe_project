@@ -4453,6 +4453,29 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     if (_pickerEditsEnd) _pickerGeneration++;
   }
 
+  /// A Search places match with an IANA zone sets the activity end zone.
+  /// A blank zone keeps prior end, then the plan zone, unless one was chosen.
+  void _applySearchPlaceZone(String zone) {
+    final next = zone.trim();
+    if (next.isEmpty) {
+      _applyPlaceZone('');
+      return;
+    }
+    _placeZone = next;
+    if (_usesFlightFields && _extraLegs.isNotEmpty) {
+      final changed = _extraLegs.last.destinationZone != next;
+      _extraLegs.last.destinationZone = next;
+      _endZonePicked = true;
+      if (changed && _pickerEditsEnd) _pickerGeneration++;
+      return;
+    }
+    final changed = _endZone != next;
+    _endZone = next;
+    _endZoneCustom = true;
+    _endZonePicked = true;
+    if (changed && _pickerEditsEnd) _pickerGeneration++;
+  }
+
   void _setStart(DateTime instant) {
     final value = instant.toUtc();
     if (_usesFlightFields) {
@@ -5307,7 +5330,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _placeSuggestions = const [];
       _placeSearchError = null;
       _placeSearchController.text = place.name;
-      _applyPlaceZone(place.timeZone);
+      _applySearchPlaceZone(place.timeZone);
     });
   }
 

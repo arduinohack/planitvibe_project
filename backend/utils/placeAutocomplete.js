@@ -1,18 +1,21 @@
 const axios = require('axios');
 const { googleMapsKey, redactKey } = require('./placeMap');
 
-const AUTOCOMPLETE_URL = 'https://places.googleapis.com/v1/places:autocomplete';
+const SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText';
+// Text Search Pro only. Rating, review count, and price level are Enterprise.
 const FIELD_MASK = [
-  'suggestions.placePrediction.placeId',
-  'suggestions.placePrediction.structuredFormat',
-  'suggestions.placePrediction.text',
+  'places.id',
+  'places.displayName',
+  'places.formattedAddress',
+  'places.location',
+  'places.timeZone',
 ].join(',');
 const MAX_RESULTS = 5;
 
-function autocompleteRequest(query, key) {
+function searchRequest(query, key) {
   return {
-    url: AUTOCOMPLETE_URL,
-    body: { input: query },
+    url: SEARCH_URL,
+    body: { textQuery: query, pageSize: MAX_RESULTS },
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': key,
@@ -42,20 +45,36 @@ function textOf(value) {
   return '';
 }
 
-function suggestionFromPrediction(prediction) {
-  if (!prediction || typeof prediction !== 'object') return null;
-  const placeId = String(prediction.placeId || '').trim();
-  if (!placeId) return null;
-  const formatting = prediction.structuredFormat || {};
-  const main = textOf(formatting.mainText);
-  const secondary = textOf(formatting.secondaryText);
-  const description = textOf(prediction.text);
-  const name = main || description;
-  if (!name) return null;
+function placeIdOf(place) {
+  const id = String(place && place.id || '').trim();
+  if (id.startsWith('places/')) return id.slice('places/'.length);
+  return id;
+}
+
+// Places timeZone is { id: "America/New_York" }. Blank stays null.
+function ianaTimeZone(place) {
+  const zone = place && place.timeZone;
+  if (typeof zone === 'string') {
+    const text = zone.trim();
+    return text || null;
+  }
+  if (zone && typeof zone === 'object') {
+    const id = typeof zone.id === 'string' ? zone.id.trim() : '';
+    return id || null;
+  }
+  return null;
+}
+
+function rowFromPlace(place) {
+  if (!place || typeof place !== 'object') return null;
+  const googlePlaceId = placeIdOf(place);
+  const name = textOf(place.displayName);
+  if (!googlePlaceId || !name) return null;
   return {
-    placeId,
+    googlePlaceId,
     name,
-    address: secondary,
+    address: String(place.formattedAddress || '').trim(),
+    timeZone: ianaTimeZone(place),
   };
 }
 
@@ -74,11 +93,10 @@ function placesFromPayload(payload) {
   if (data.error) {
     return { error: googleMessage(data) || 'Could not search places' };
   }
-  const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+  const rows = Array.isArray(data.places) ? data.places : [];
   const places = [];
-  for (const suggestion of suggestions) {
-    const prediction = suggestion && suggestion.placePrediction;
-    const row = suggestionFromPrediction(prediction);
+  for (const place of rows) {
+    const row = rowFromPlace(place);
     if (!row) continue;
     places.push(row);
     if (places.length >= MAX_RESULTS) break;
@@ -98,7 +116,8 @@ async function defaultPost(url, body, headers) {
   };
 }
 
-// Places API (New) Autocomplete. Returns a short list of placeId, name, and address.
+// Places API (New) Text Search Pro. Returns googlePlaceId, name, address, and timeZone.
+// Does not write a plan or an activity.
 async function searchPlaces(query, { post } = {}) {
   const key = googleMapsKey();
   if (!key) {
@@ -109,7 +128,7 @@ async function searchPlaces(query, { post } = {}) {
     return { status: 400, msg: 'Query is required' };
   }
 
-  const request = autocompleteRequest(q, key);
+  const request = searchRequest(q, key);
   const fetchPlaces = post || defaultPost;
   let res;
   try {
@@ -128,9 +147,9 @@ async function searchPlaces(query, { post } = {}) {
 
 module.exports = {
   searchPlaces,
-  autocompleteRequest,
+  searchRequest,
   placesFromPayload,
-  AUTOCOMPLETE_URL,
+  SEARCH_URL,
   FIELD_MASK,
   MAX_RESULTS,
 };

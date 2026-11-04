@@ -19,7 +19,8 @@ async function callerMaySearchPlaces(callerId) {
 }
 
 // GET /api/places/autocomplete?q=
-// Owner or Collaborator. Forwards the query to Google Places Autocomplete.
+// Owner or Collaborator. Text Search Pro for Search places.
+// Returns googlePlaceId, name, address, and timeZone. Does not write a plan.
 router.get('/autocomplete', authMiddleware, async (req, res) => {
   try {
     const callerId = req.user.userId || req.user.id;

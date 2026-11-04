@@ -2502,6 +2502,7 @@ class PlanProvider extends ChangeNotifier {
   }
 
   /// GET /api/places/autocomplete?q=. 200 is a short list of places.
+  /// Each place has googlePlaceId, name, address, and an IANA timeZone or none.
   Future<PlaceSearchResult> searchPlaces({
     required String query,
     required String? token,
@@ -2532,15 +2533,16 @@ class PlanProvider extends ChangeNotifier {
       final places = <PlaceSuggestion>[];
       for (final item in data) {
         if (item is! Map) continue;
-        final placeId = (item['placeId'] ?? '').toString().trim();
+        final placeId = (item['googlePlaceId'] ?? '').toString().trim();
         final name = (item['name'] ?? '').toString().trim();
         if (placeId.isEmpty || name.isEmpty) continue;
+        final rawZone = item['timeZone'];
         places.add(
           PlaceSuggestion(
             placeId: placeId,
             name: name,
             address: (item['address'] ?? '').toString().trim(),
-            timeZone: (item['timeZone'] ?? '').toString().trim(),
+            timeZone: rawZone == null ? '' : rawZone.toString().trim(),
           ),
         );
       }
