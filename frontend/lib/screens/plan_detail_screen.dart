@@ -1313,6 +1313,37 @@ class _UtcDateTimePicker extends StatelessWidget {
   }
 }
 
+class _PinnedItineraryBar extends SliverPersistentHeaderDelegate {
+  final double extent;
+  final Widget child;
+
+  _PinnedItineraryBar({required this.extent, required this.child});
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      elevation: overlapsContent ? 1 : 0,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_PinnedItineraryBar oldDelegate) {
+    return extent != oldDelegate.extent || child != oldDelegate.child;
+  }
+}
+
 class PlanDetailScreen extends StatefulWidget {
   final Plan plan;
 
@@ -1922,24 +1953,97 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
-  Widget _itineraryDayHeader(String label, {VoidCallback? onOptimize}) {
+  Widget _itineraryDayHeader(String label) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Row(
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _itineraryActions({
+    required bool showAiEdit,
+    required bool showAdd,
+    required bool showOptimize,
+    required int? optimizeDay,
+  }) {
+    if (!showAiEdit && !showAdd && !showOptimize) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          if (showAiEdit)
+            _fieldTooltip(
+              'Propose changes with AI',
+              TextButton(
+                onPressed: _openAiEdit,
+                child: const Text('AI Edit'),
+              ),
             ),
-          ),
-          if (onOptimize != null)
-            TextButton(
-              onPressed: onOptimize,
-              child: const Text('Optimize day'),
+          if (showAdd)
+            _fieldTooltip(
+              'Add a new activity',
+              TextButton(
+                onPressed: () => _addActivity(),
+                child: const Text('Add Activity'),
+              ),
+            ),
+          if (showOptimize && optimizeDay != null)
+            _fieldTooltip(
+              'Tighten times on the selected day',
+              TextButton(
+                onPressed: () => _openOptimizeDay(optimizeDay),
+                child: const Text('Optimize Day'),
+              ),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _dayFilter({
+    required int? selectedDay,
+    required List<PlanItineraryDay> daySpan,
+  }) {
+    String closedLabel(int? day) {
+      if (day == null) return 'Day Filter: All';
+      for (final item in daySpan) {
+        if (item.number == day) return 'Day Filter: ${item.label}';
+      }
+      return 'Day Filter: Day $day';
+    }
+
+    Widget face(String text) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Text(text, overflow: TextOverflow.ellipsis),
+      );
+    }
+
+    return DropdownButton<int?>(
+      value: selectedDay,
+      isExpanded: true,
+      selectedItemBuilder: (context) => [
+        face(closedLabel(null)),
+        for (final day in daySpan) face(closedLabel(day.number)),
+      ],
+      items: [
+        const DropdownMenuItem<int?>(
+          value: null,
+          child: Text('All'),
+        ),
+        for (final day in daySpan)
+          DropdownMenuItem<int?>(
+            value: day.number,
+            child: Text(day.label),
+          ),
+      ],
+      onChanged: (value) => setState(() => _itineraryDay = value),
     );
   }
 
@@ -2004,14 +2108,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     required List<_ShownActivityTimes> shownTimes,
     required String planZone,
     required bool canChange,
-    required bool canOptimize,
     required Set<String> hiddenFields,
   }) {
     final blocks = <Widget>[
-      _itineraryDayHeader(
-        day.label,
-        onOptimize: canOptimize ? () => _openOptimizeDay(day.number) : null,
-      ),
+      _itineraryDayHeader(day.label),
     ];
     if (indexes.isEmpty) {
       blocks.add(
@@ -2882,9 +2982,21 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               if (selfId == null || user.userId != selfId) user,
           ];
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+          final showAiEdit = canChange && !trialReadOnly;
+          final showAdd = canChange && !readOnly && !trialReadOnly;
+          final showOptimize =
+              showAdd && daySpan.isNotEmpty;
+          final barExtent = 48.0 +
+              (showAiEdit || showAdd || showOptimize ? 48.0 : 0) +
+              (daySpan.isNotEmpty ? 56.0 : 0);
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
               if (_offlineName != null)
                 Container(
                   width: double.infinity,
@@ -2987,59 +3099,44 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'Itinerary',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _PinnedItineraryBar(
+                  extent: barExtent,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          'Itinerary',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        _itineraryActions(
+                          showAiEdit: showAiEdit,
+                          showAdd: showAdd,
+                          showOptimize: showOptimize,
+                          optimizeDay: selectedDay ??
+                              (daySpan.isEmpty ? null : daySpan.first.number),
+                        ),
+                        if (daySpan.isNotEmpty)
+                          _dayFilter(selectedDay: selectedDay, daySpan: daySpan),
+                      ],
                     ),
                   ),
-                  if (canChange)
-                    Flexible(
-                      child: Wrap(
-                        alignment: WrapAlignment.end,
-                        children: [
-                          if (!trialReadOnly)
-                            TextButton(
-                              onPressed: _openAiEdit,
-                              child: const Text('AI edit'),
-                            ),
-                          if (!readOnly && !trialReadOnly)
-                            TextButton(
-                              onPressed: () => _addActivity(),
-                              child: const Text('Add activity'),
-                            ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              if (daySpan.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                DropdownButton<int?>(
-                  value: selectedDay,
-                  isExpanded: true,
-                  items: [
-                    const DropdownMenuItem<int?>(
-                      value: null,
-                      child: Text('All'),
-                    ),
-                    for (final day in daySpan)
-                      DropdownMenuItem<int?>(
-                        value: day.number,
-                        child: Text(day.label),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _itineraryDay = value),
                 ),
-              ],
-              const SizedBox(height: 8),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
               if (activities.isEmpty)
                 const Center(
                   child: Text(
@@ -3068,9 +3165,11 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       shownTimes: shownTimes,
                       planZone: shown.timeZone,
                       canChange: canChange,
-                      canOptimize: canChange && !readOnly && !trialReadOnly,
                       hiddenFields: hiddenFields,
                     ),
+              ]),
+                ),
+              ),
             ],
           );
         },
@@ -3272,6 +3371,30 @@ const _suggestPlaceTypes = <String, String>{
   'tour': 'Tour',
 };
 
+const _aiEditExamples = <String>[
+  'Add a free afternoon on day 2',
+  'Make the dinner later',
+  "What's missing on day 3?",
+  'Move the museum to the morning',
+];
+
+Widget _sheetHeading(BuildContext context, String title) {
+  return Row(
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+      ),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Close'),
+      ),
+    ],
+  );
+}
+
 class _AiEditSheet extends StatefulWidget {
   final String planId;
 
@@ -3443,6 +3566,14 @@ class _AiEditSheetState extends State<_AiEditSheet> {
     return '$summary\n$name';
   }
 
+  void _fillExample(String example) {
+    _instructionController.value = TextEditingValue(
+      text: example,
+      selection: TextSelection.collapsed(offset: example.length),
+    );
+    if (_error != null) setState(() => _error = null);
+  }
+
   void _addLine(List<String> lines, String label, Object? value) {
     final text = value?.toString().trim() ?? '';
     if (text.isEmpty) return;
@@ -3459,10 +3590,7 @@ class _AiEditSheetState extends State<_AiEditSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'AI edit',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+            _sheetHeading(context, 'AI Edit'),
             const SizedBox(height: 12),
             if (_history.isNotEmpty) ...[
               ConstrainedBox(
@@ -3514,6 +3642,25 @@ class _AiEditSheetState extends State<_AiEditSheet> {
               ),
               const SizedBox(height: 4),
             ],
+            const Text(
+              'Examples',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            for (final example in _aiEditExamples)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerLeft,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => _fillExample(example),
+                  child: Text(example),
+                ),
+              ),
+            const SizedBox(height: 8),
             TextField(
               controller: _instructionController,
               decoration: const InputDecoration(
@@ -3726,10 +3873,7 @@ class _OptimizeDaySheetState extends State<_OptimizeDaySheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Optimize day',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
+            _sheetHeading(context, 'Optimize Day'),
             const SizedBox(height: 12),
             DropdownButton<int>(
               value: _day,
