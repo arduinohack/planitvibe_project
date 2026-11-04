@@ -3997,6 +3997,77 @@ class _SuggestPlacesSheetState extends State<_SuggestPlacesSheet> {
   }
 }
 
+class _ActivityTimePickerSheet extends StatefulWidget {
+  final String pickerKey;
+  final DateTime initialDate;
+  final ValueChanged<DateTime> onChanged;
+
+  const _ActivityTimePickerSheet({
+    required this.pickerKey,
+    required this.initialDate,
+    required this.onChanged,
+  });
+
+  @override
+  State<_ActivityTimePickerSheet> createState() =>
+      _ActivityTimePickerSheetState();
+}
+
+class _ActivityTimePickerSheetState extends State<_ActivityTimePickerSheet> {
+  var _moved = false;
+
+  bool _sameWall(DateTime a, DateTime b) {
+    return a.year == b.year &&
+        a.month == b.month &&
+        a.day == b.day &&
+        a.hour == b.hour &&
+        a.minute == b.minute;
+  }
+
+  void _picked(DateTime picked) {
+    if (!_moved && _sameWall(picked, widget.initialDate)) return;
+    _moved = true;
+    widget.onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            BoardDateTimePickerWidget(
+              key: ValueKey(widget.pickerKey),
+              pickerType: DateTimePickerType.datetime,
+              breakpoint: 4000,
+              initialDate: widget.initialDate,
+              minimumDate: DateTime(2000),
+              maximumDate: DateTime(2100, 12, 31, 23, 59),
+              options: const BoardDateTimeOptions(
+                languages: BoardPickerLanguages.en(),
+                useAmpm: false,
+              ),
+              customCloseButtonBuilder: (context, modal, onClose) =>
+                  const SizedBox.shrink(),
+              onChanged: _picked,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ActivityFormDialog extends StatefulWidget {
   final String title;
   final String actionLabel;
@@ -5680,9 +5751,9 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
         defaultChainStart(existingStarts: const [], planTimeZone: planZone);
   }
 
-  DateTime _visiblePickerWall() {
-    final instant = _pickerEditsEnd ? _spanEnd : _start;
-    final zone = _pickerEditsEnd ? _lastDestinationZone() : _startZone;
+  DateTime _visiblePickerWall(bool end) {
+    final instant = end ? _spanEnd : _start;
+    final zone = end ? _lastDestinationZone() : _startZone;
     return _wallDate(instant ?? _pickerSeedInstant(), zone);
   }
 
@@ -5717,8 +5788,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     return abbr;
   }
 
-  void _onEmbeddedPicker(DateTime picked) {
-    final editingEnd = _pickerEditsEnd;
+  void _onClockPicked(bool editingEnd, DateTime picked) {
     final zone = editingEnd ? _lastDestinationZone() : _startZone;
     final instant = _utcFromWall(picked, zone);
     final current = editingEnd ? _spanEnd : _start;
@@ -5728,6 +5798,28 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       return;
     }
     _setStart(instant);
+  }
+
+  void _openClockPicker(bool end) {
+    setState(() => _pickerEditsEnd = end);
+    final wall = _visiblePickerWall(end);
+    final generation = _pickerGeneration;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: _ActivityTimePickerSheet(
+            pickerKey: '${end ? 'end' : 'start'}|$generation',
+            initialDate: wall,
+            onChanged: (picked) => _onClockPicked(end, picked),
+          ),
+        );
+      },
+    );
   }
 
   void _setSheetEnd(DateTime instant) {
@@ -5745,14 +5837,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       return;
     }
     _clearEnd();
-  }
-
-  void _selectPickerTarget(bool end) {
-    if (end == _pickerEditsEnd) return;
-    setState(() {
-      _pickerEditsEnd = end;
-      _pickerGeneration++;
-    });
   }
 
   Widget _zoneMenu({
@@ -5791,6 +5875,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     required DateTime? instant,
     required String zone,
     required bool selected,
+    required VoidCallback onOpen,
     required ValueChanged<String> onZone,
     required String zoneMenuId,
     VoidCallback? onClear,
@@ -5809,7 +5894,21 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
               ),
             ),
           ),
-          Expanded(child: Text(_sheetClockLabel(instant, named))),
+          Expanded(
+            child: InkWell(
+              onTap: onOpen,
+              child: Container(
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Theme.of(context).dividerColor),
+                  ),
+                ),
+                child: Text(_sheetClockLabel(instant, named)),
+              ),
+            ),
+          ),
           _zoneMenu(
             id: zoneMenuId,
             instant: instant,
@@ -5839,6 +5938,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             instant: _start,
             zone: _startZone,
             selected: !_pickerEditsEnd,
+            onOpen: () => _openClockPicker(false),
             onZone: _pickActivityStartZone,
             zoneMenuId: 'activity-start-zone',
             onClear: widget.isScreen && _start != null ? _clearStart : null,
@@ -5848,6 +5948,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
             instant: endInstant,
             zone: endZone,
             selected: _pickerEditsEnd,
+            onOpen: () => _openClockPicker(true),
             onZone: _pickActivityEndZone,
             zoneMenuId: 'activity-end-zone',
             onClear: widget.isScreen && endInstant != null ? _clearSheetEnd : null,
@@ -5891,38 +5992,6 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
                 ),
                 _FieldHint(durationHint),
               ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: SegmentedButton<bool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: false, label: Text('Start')),
-                ButtonSegment(value: true, label: Text('End')),
-              ],
-              selected: {_pickerEditsEnd},
-              onSelectionChanged: (next) => _selectPickerTarget(next.first),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: BoardDateTimePickerWidget(
-              key: ValueKey(
-                '${_pickerEditsEnd ? 'end' : 'start'}|$_pickerGeneration',
-              ),
-              pickerType: DateTimePickerType.datetime,
-              breakpoint: 4000,
-              initialDate: _visiblePickerWall(),
-              minimumDate: DateTime(2000),
-              maximumDate: DateTime(2100, 12, 31, 23, 59),
-              options: const BoardDateTimeOptions(
-                languages: BoardPickerLanguages.en(),
-                useAmpm: false,
-              ),
-              customCloseButtonBuilder: (context, modal, onClose) =>
-                  const SizedBox.shrink(),
-              onChanged: _onEmbeddedPicker,
             ),
           ),
         ],
