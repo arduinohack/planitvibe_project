@@ -338,6 +338,12 @@ describe('Plus subscription', () => {
       subscribedAt: null,
       currentPeriodEnd: null,
       expiredAt: null,
+      subscriptionTier: null,
+      subscriptionStartedAt: null,
+      subscriptionEndsAt: null,
+      autoRenew: false,
+      planLimit: 2,
+      monthlyCreditsRemaining: 0,
     });
   });
 
@@ -583,6 +589,12 @@ describe('Plus subscription', () => {
       subscribedAt,
       currentPeriodEnd: new Date(period3 * 1000).toISOString(),
       expiredAt: stored.expiredAt.toISOString(),
+      subscriptionTier: null,
+      subscriptionStartedAt: null,
+      subscriptionEndsAt: null,
+      autoRenew: false,
+      planLimit: 2,
+      monthlyCreditsRemaining: 20,
     });
   });
 

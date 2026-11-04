@@ -14,6 +14,12 @@ const { NAME_LIMIT, generateApiKey } = require('../utils/apiKey');
 const { getCreditBalances } = require('../utils/aiCredits');
 const { accessSummary } = require('../utils/planAccess');
 const { createCreditCheckout } = require('../utils/stripeCredits');
+const {
+  TIER_PLANITVIBE,
+  TIER_PLUS,
+  TIER_PRO,
+  planCapFor,
+} = require('../utils/membershipTiers');
 const router = express.Router();
 const settingsRouter = express.Router();
 
@@ -22,6 +28,38 @@ const PROVIDER_MESSAGE = 'Provider must be xai, openai, anthropic, gemini, or no
 function callerId(req) {
   const id = req.user && (req.user.userId || req.user.id);
   return typeof id === 'string' ? id : '';
+}
+
+function isoOrNull(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function subscriptionTierOf(user) {
+  const tier = user && typeof user.tier === 'string' ? user.tier.trim() : '';
+  if (tier === TIER_PLANITVIBE || tier === TIER_PLUS || tier === TIER_PRO) return tier;
+  return null;
+}
+
+// Fields the Subscription and AI Settings page reads. plusActive and the
+// older tier fields stay on the same response.
+function subscriptionStatusFields(user, balances) {
+  const subscriptionTier = subscriptionTierOf(user);
+  const status = user && typeof user.subscriptionStatus === 'string'
+    ? user.subscriptionStatus.trim()
+    : '';
+  const renewing = status === 'active' || status === 'trialing';
+  const unlimited = subscriptionTier === TIER_PLUS || subscriptionTier === TIER_PRO;
+  return {
+    subscriptionTier,
+    subscriptionStartedAt: subscriptionTier ? isoOrNull(user.subscribedAt) : null,
+    subscriptionEndsAt: subscriptionTier ? isoOrNull(user.plusCurrentPeriodEnd) : null,
+    autoRenew: Boolean(subscriptionTier) && renewing,
+    planLimit: unlimited ? null : planCapFor(subscriptionTier || 'trial'),
+    monthlyCreditsRemaining: balances.monthlyCredits,
+  };
 }
 
 function settingsBody(user) {
@@ -106,7 +144,9 @@ async function sendCreditStatus(req, res) {
   try {
     const userId = callerId(req);
     if (!userId) return res.status(401).json({ message: 'No token, authorization denied' });
-    const user = await User.findById(userId).select('_id').lean();
+    const user = await User.findById(userId)
+      .select('tier subscriptionStatus subscribedAt plusCurrentPeriodEnd')
+      .lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
     const [balances, summary] = await Promise.all([
       getCreditBalances(userId),
@@ -117,6 +157,7 @@ async function sendCreditStatus(req, res) {
       monthlyCredits: balances.monthlyCredits,
       purchasedCredits: balances.purchasedCredits,
       ...summary,
+      ...subscriptionStatusFields(user, balances),
     });
   } catch (err) {
     console.error('AI credits read failed');

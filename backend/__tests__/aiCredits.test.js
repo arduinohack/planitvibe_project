@@ -182,6 +182,12 @@ describe('AI credits', () => {
       subscribedAt: null,
       currentPeriodEnd: null,
       expiredAt: null,
+      subscriptionTier: null,
+      subscriptionStartedAt: null,
+      subscriptionEndsAt: null,
+      autoRenew: false,
+      planLimit: 2,
+      monthlyCreditsRemaining: 0,
     });
 
     const missing = await request(app).get(CREDITS);
@@ -302,6 +308,12 @@ describe('AI credits', () => {
       subscribedAt: null,
       currentPeriodEnd: null,
       expiredAt: null,
+      subscriptionTier: null,
+      subscriptionStartedAt: null,
+      subscriptionEndsAt: null,
+      autoRenew: false,
+      planLimit: 2,
+      monthlyCreditsRemaining: 0,
     });
     expect(await getBalance(admin.userId)).toBe(0);
 
@@ -324,6 +336,74 @@ describe('AI credits', () => {
       .send({ amount: 1 });
     expect(missing.status).toBe(404);
     expect(await getBalance(ada.userId)).toBe(5);
+  });
+
+  test('the status route returns subscription dates, plan count, and the credit split', async () => {
+    const ada = await registerAndLogin('ada-subscription-status@example.com');
+    await createPlan(ada.token);
+    const started = new Date('2026-03-01T00:00:00.000Z');
+    const ends = new Date('2026-04-01T00:00:00.000Z');
+    await User.updateOne(
+      { _id: ada.userId },
+      {
+        $set: {
+          tier: 'planitvibe',
+          plusActive: true,
+          subscriptionStatus: 'active',
+          subscribedAt: started,
+          plusCurrentPeriodEnd: ends,
+          monthlyCredits: 12,
+          purchasedCredits: 40,
+          aiCredits: 52,
+        },
+      },
+    );
+
+    const planitvibe = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(planitvibe.status).toBe(200);
+    expect(planitvibe.body.plusActive).toBe(true);
+    expect(planitvibe.body.subscriptionTier).toBe('planitvibe');
+    expect(planitvibe.body.subscriptionStartedAt).toBe(started.toISOString());
+    expect(planitvibe.body.subscriptionEndsAt).toBe(ends.toISOString());
+    expect(planitvibe.body.autoRenew).toBe(true);
+    expect(planitvibe.body.plansOwned).toBe(1);
+    expect(planitvibe.body.planLimit).toBe(4);
+    expect(planitvibe.body.monthlyCreditsRemaining).toBe(12);
+    expect(planitvibe.body.purchasedCredits).toBe(40);
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { tier: 'plus', subscriptionStatus: 'active' } },
+    );
+    const plus = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(plus.body.subscriptionTier).toBe('plus');
+    expect(plus.body.autoRenew).toBe(true);
+    expect(plus.body.planLimit).toBeNull();
+    expect(plus.body.subscriptionStartedAt).toBe(started.toISOString());
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { tier: 'pro', subscriptionStatus: 'trialing' } },
+    );
+    const pro = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(pro.body.subscriptionTier).toBe('pro');
+    expect(pro.body.autoRenew).toBe(true);
+    expect(pro.body.planLimit).toBeNull();
+
+    await User.updateOne(
+      { _id: ada.userId },
+      { $set: { tier: 'trial', plusActive: false, subscriptionStatus: 'canceled' } },
+    );
+    const trial = await request(app).get(CREDITS).set(bearer(ada.token));
+    expect(trial.body.plusActive).toBe(false);
+    expect(trial.body.subscriptionTier).toBeNull();
+    expect(trial.body.subscriptionStartedAt).toBeNull();
+    expect(trial.body.subscriptionEndsAt).toBeNull();
+    expect(trial.body.autoRenew).toBe(false);
+    expect(trial.body.planLimit).toBe(2);
+    expect(trial.body.plansOwned).toBe(1);
+    expect(trial.body.monthlyCreditsRemaining).toBe(12);
+    expect(trial.body.purchasedCredits).toBe(40);
   });
 
   test('a server-key paste deducts 1 and a zero balance returns 402 without calling the model', async () => {
