@@ -350,6 +350,7 @@ class Plan {
   final String archiveDescription;
   final DateTime? archivedAt;
   final String archivedBy;
+  final bool trialReadOnly;
 
   bool get isArchived => status == 'archived';
 
@@ -384,6 +385,7 @@ class Plan {
     this.archiveDescription = '',
     this.archivedAt,
     this.archivedBy = '',
+    this.trialReadOnly = false,
   });
 
   /// Same plan with the name and time zone from a saved itinerary snapshot.
@@ -419,6 +421,7 @@ class Plan {
       archiveDescription: archiveDescription,
       archivedAt: archivedAt,
       archivedBy: archivedBy,
+      trialReadOnly: trialReadOnly,
     );
   }
 
@@ -469,6 +472,7 @@ class Plan {
       archiveDescription: _stringValue(json['archiveDescription']),
       archivedAt: _dateValue(json['archivedAt']),
       archivedBy: _stringValue(json['archivedBy']),
+      trialReadOnly: json['trialReadOnly'] == true,
     );
   }
   /*

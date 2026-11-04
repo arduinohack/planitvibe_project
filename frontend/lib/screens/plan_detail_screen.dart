@@ -1665,6 +1665,10 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
     }
   }
 
+  bool _trialReadOnly(PlanProvider planProvider) {
+    return _shownPlan(planProvider).trialReadOnly;
+  }
+
   Plan _shownPlan(PlanProvider planProvider) {
     Plan shown = _plan;
     for (final plan in planProvider.plans) {
@@ -2581,7 +2585,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               !(Provider.of<UserProvider>(context, listen: false)
                       .planAccess
                       ?.readOnly ??
-                  false),
+                  false) &&
+              !_trialReadOnly(planProvider),
         ),
       ),
     );
@@ -2616,7 +2621,8 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
               !(Provider.of<UserProvider>(context, listen: false)
                       .planAccess
                       ?.readOnly ??
-                  false),
+                  false) &&
+              !plan.trialReadOnly,
         ),
       ),
     );
@@ -2848,6 +2854,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
             planProvider.itineraryActivities,
           );
           final readOnly = viewer.planAccess?.readOnly ?? false;
+          final trialReadOnly = shown.trialReadOnly;
           final canChange = canAddActivity(storedRole);
           final trialLabel = viewer.planAccess?.trialEndsLabel;
           final shownTimes = _shownActivityTimes(activities);
@@ -2921,7 +2928,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                               onPressed: _resortByStartTime,
                               child: const Text('Re-sort'),
                             ),
-                          if (canEditPlan(storedRole))
+                          if (canEditPlan(storedRole) && !trialReadOnly)
                             IconButton(
                               tooltip: 'Edit plan',
                               icon: const Icon(Icons.edit),
@@ -2998,11 +3005,12 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       child: Wrap(
                         alignment: WrapAlignment.end,
                         children: [
-                          TextButton(
-                            onPressed: _openAiEdit,
-                            child: const Text('AI edit'),
-                          ),
-                          if (!readOnly)
+                          if (!trialReadOnly)
+                            TextButton(
+                              onPressed: _openAiEdit,
+                              child: const Text('AI edit'),
+                            ),
+                          if (!readOnly && !trialReadOnly)
                             TextButton(
                               onPressed: () => _addActivity(),
                               child: const Text('Add activity'),
@@ -3060,7 +3068,7 @@ class _PlanDetailScreenState extends State<PlanDetailScreen> {
                       shownTimes: shownTimes,
                       planZone: shown.timeZone,
                       canChange: canChange,
-                      canOptimize: canChange && !readOnly,
+                      canOptimize: canChange && !readOnly && !trialReadOnly,
                       hiddenFields: hiddenFields,
                     ),
             ],

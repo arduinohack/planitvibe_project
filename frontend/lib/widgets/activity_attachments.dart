@@ -27,8 +27,16 @@ class ActivityAttachmentsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>();
-    final plans = context.read<PlanProvider>();
+    final plans = context.watch<PlanProvider>();
+    var trialReadOnly = false;
+    for (final plan in plans.plans) {
+      if (plan.id == planId) {
+        trialReadOnly = plan.trialReadOnly;
+        break;
+      }
+    }
     return ActivityAttachmentsPanel(
+      allowAdd: !trialReadOnly,
       storedRole: plans.viewerStoredRole(planId, user.currentUserId),
       userId: user.currentUserId,
       loadAttachments: () => plans.fetchActivityAttachments(
@@ -57,6 +65,7 @@ class ActivityAttachmentsSection extends StatelessWidget {
 class ActivityAttachmentsPanel extends StatefulWidget {
   final String? storedRole;
   final String? userId;
+  final bool allowAdd;
   final Future<ActivityAttachmentListResult> Function() loadAttachments;
   final Future<ActivityAttachmentWriteResult> Function(
     String filename,
@@ -74,6 +83,7 @@ class ActivityAttachmentsPanel extends StatefulWidget {
     super.key,
     required this.storedRole,
     required this.userId,
+    this.allowAdd = true,
     required this.loadAttachments,
     required this.uploadAttachment,
     required this.fetchFile,
@@ -316,6 +326,15 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
     final result = await widget.deleteAttachment(item.id);
     if (!mounted) return;
     setState(() => _busy = false);
+    if (result.status == 402) {
+      await showPlusUpgradeDialog(
+        context,
+        message: result.error ??
+            'This plan is read-only on the free trial. Upgrade to Plus to edit it.',
+        token: context.read<UserProvider>().token,
+      );
+      return;
+    }
     if (result.status != 200) {
       _snack(attachmentErrorMessage(result.status, result.error));
       return;
@@ -328,7 +347,8 @@ class _ActivityAttachmentsPanelState extends State<ActivityAttachmentsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final canAdd = canAddActivityAttachment(widget.storedRole);
+    final canAdd =
+        widget.allowAdd && canAddActivityAttachment(widget.storedRole);
     final theme = Theme.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,

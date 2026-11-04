@@ -309,6 +309,11 @@ Plan _planWithSourceId(Plan plan, String sourcePlanId) {
     linkStart: plan.linkStart,
     linkEnd: plan.linkEnd,
     hiddenFields: plan.hiddenFields,
+    status: plan.status,
+    archiveDescription: plan.archiveDescription,
+    archivedAt: plan.archivedAt,
+    archivedBy: plan.archivedBy,
+    trialReadOnly: plan.trialReadOnly,
   );
 }
 
@@ -337,6 +342,11 @@ Plan _planWithOwner(Plan plan, String ownerId) {
     linkStart: plan.linkStart,
     linkEnd: plan.linkEnd,
     hiddenFields: plan.hiddenFields,
+    status: plan.status,
+    archiveDescription: plan.archiveDescription,
+    archivedAt: plan.archivedAt,
+    archivedBy: plan.archivedBy,
+    trialReadOnly: plan.trialReadOnly,
   );
 }
 
@@ -380,6 +390,11 @@ Plan _planKeepingActivitySpan(
     linkStart: updated.linkStart,
     linkEnd: updated.linkEnd,
     hiddenFields: updated.hiddenFields,
+    status: updated.status,
+    archiveDescription: updated.archiveDescription,
+    archivedAt: updated.archivedAt,
+    archivedBy: updated.archivedBy,
+    trialReadOnly: updated.trialReadOnly,
   );
 }
 
