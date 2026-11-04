@@ -306,6 +306,11 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     }
   }
 
+  String _packForTier(String tierId) {
+    if (tierId == tierPlus) return 'plus';
+    return checkoutPackForTier(tierId)!;
+  }
+
   Future<void> _buy(String pack) async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -424,7 +429,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                         OutlinedButton(
                           onPressed: _busy
                               ? null
-                              : () => _buy(checkoutPackForTier(tierId)!),
+                              : () => _buy(_packForTier(tierId)),
                           child: Text(
                             'Upgrade to ${tierDisplayName(tierId)}',
                           ),
@@ -433,7 +438,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                         TextButton(
                           onPressed: _busy
                               ? null
-                              : () => _buy(checkoutPackForTier(tierId)!),
+                              : () => _buy(_packForTier(tierId)),
                           child: Text(
                             'Downgrade to ${tierDisplayName(tierId)}',
                           ),
