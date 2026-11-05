@@ -429,7 +429,7 @@ async function askCommandModel(prompt, apiKey) {
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
         },
-        timeout: 20000,
+        timeout: 60000,
         validateStatus: () => true,
       },
     );
