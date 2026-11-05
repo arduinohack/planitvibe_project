@@ -492,13 +492,22 @@ String? _cardStatusLabel(String? status) {
   }
 }
 
+/// Card-only duration. Hours are not padded. Minutes are always two digits.
+String _cardHoursAndMinutes(int minutes) {
+  final negative = minutes < 0;
+  final total = minutes.abs();
+  final hours = total ~/ 60;
+  final mins = (total % 60).toString().padLeft(2, '0');
+  return '${negative ? '-' : ''}$hours:$mins';
+}
+
 String? _cardDurationLabel(Activity activity) {
   final minutes = activity.duration?.inMinutes;
-  if (minutes != null) return '$minutes min';
+  if (minutes != null) return _cardHoursAndMinutes(minutes);
   final start = activity.startTime;
   final end = activity.endTime;
   if (start != null && end != null) {
-    return '${end.difference(start).inMinutes} min';
+    return _cardHoursAndMinutes(end.difference(start).inMinutes);
   }
   return null;
 }
