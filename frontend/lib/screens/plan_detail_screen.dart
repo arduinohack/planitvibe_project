@@ -523,27 +523,86 @@ void _addCardLine(List<Widget> lines, String label, String? value) {
   lines.add(_cardLine(label, text));
 }
 
-String _flightLegCardText(FlightLeg leg, String startZone, String endZone) {
-  final parts = <String>[];
-  final origin = leg.origin.trim();
+String _cardZoneName(String zone) {
+  final named = zone.trim();
+  return named.isEmpty ? 'UTC' : named;
+}
+
+/// Wall clock plus the three-letter code for this instant. The tooltip is the IANA name.
+List<InlineSpan> _cardZoneClockSpans(DateTime instant, String zone) {
+  final named = _cardZoneName(zone);
+  final clock = itineraryClockLabel(instant, named);
+  final code = clockInZone(instant, named).abbreviation.trim();
+  return [
+    TextSpan(text: code.isEmpty ? clock : '$clock '),
+    if (code.isNotEmpty)
+      WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: _fieldTooltip(named, Text(code)),
+      ),
+  ];
+}
+
+Widget _cardClockLine(String label, DateTime instant, String zone) {
+  return Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(
+          text: '$label: ',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        ..._cardZoneClockSpans(instant, zone),
+      ],
+    ),
+  );
+}
+
+Widget? _flightLegCardLine(
+  String label,
+  FlightLeg leg,
+  String startZone,
+  String endZone,
+) {
   final departureZone = leg.originTimeZone.trim().isNotEmpty
       ? leg.originTimeZone.trim()
       : startZone;
   final arrivalZone = leg.destinationTimeZone.trim().isNotEmpty
       ? leg.destinationTimeZone.trim()
       : endZone;
-  if (origin.isNotEmpty) parts.add(origin);
-  if (leg.departure != null) {
-    parts.add(_pdfClock(leg.departure, departureZone));
+  final spans = <InlineSpan>[];
+
+  void addPiece(String text) {
+    final piece = text.trim();
+    if (piece.isEmpty || piece == 'not set') return;
+    if (spans.isNotEmpty) spans.add(const TextSpan(text: ', '));
+    spans.add(TextSpan(text: piece));
   }
+
+  void addClock(DateTime? instant, String zone) {
+    if (instant == null) return;
+    if (spans.isNotEmpty) spans.add(const TextSpan(text: ', '));
+    spans.addAll(_cardZoneClockSpans(instant, zone));
+  }
+
+  addPiece(leg.origin);
+  addClock(leg.departure, departureZone);
   final minutes = _shownLegMinutes(leg);
-  if (minutes != null) parts.add('$minutes min');
-  final destination = leg.destination.trim();
-  if (destination.isNotEmpty) parts.add(destination);
-  if (leg.arrival != null) {
-    parts.add(_pdfClock(leg.arrival, arrivalZone));
-  }
-  return parts.where((part) => part.trim().isNotEmpty && part.trim() != 'not set').join(', ');
+  if (minutes != null) addPiece('$minutes min');
+  addPiece(leg.destination);
+  addClock(leg.arrival, arrivalZone);
+  if (spans.isEmpty) return null;
+  return Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(
+          text: '$label: ',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        ...spans,
+      ],
+    ),
+  );
 }
 
 int? _shownLegMinutes(FlightLeg leg) {
@@ -581,11 +640,13 @@ _ActivityCardContent _activityCardContent(
   final storedType = _activityStoredType(activity);
   final startZone = _activityStartZone(activity, planZone);
   final endZone = _activityEndZone(activity, planZone);
-  if (times.start != null) {
-    _addCardLine(above, 'Start', _pdfClock(times.start, startZone));
+  final start = times.start;
+  if (start != null) {
+    above.add(_cardClockLine('Start', start, startZone));
   }
-  if (times.end != null) {
-    _addCardLine(above, 'End', _pdfClock(times.end, endZone));
+  final end = times.end;
+  if (end != null) {
+    above.add(_cardClockLine('End', end, endZone));
   }
   _addCardLine(above, 'Duration', _cardDurationLabel(activity));
   if (!hiddenFields.contains('details')) {
@@ -598,11 +659,13 @@ _ActivityCardContent _activityCardContent(
   }
   if (_typeUsesFlightFields(storedType)) {
     for (var index = 0; index < activity.legs.length; index++) {
-      _addCardLine(
-        below,
+      final line = _flightLegCardLine(
         'Leg ${index + 1}',
-        _flightLegCardText(activity.legs[index], startZone, endZone),
+        activity.legs[index],
+        startZone,
+        endZone,
       );
+      if (line != null) below.add(line);
     }
     _addCardLine(below, 'Gate', activity.gate);
     _addCardLine(below, 'Baggage claim', activity.baggageClaim);
