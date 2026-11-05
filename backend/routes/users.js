@@ -12,6 +12,7 @@ const {
 const ApiKey = require('../models/ApiKey');
 const { NAME_LIMIT, generateApiKey } = require('../utils/apiKey');
 const { getCreditBalances } = require('../utils/aiCredits');
+const AiUsage = require('../models/AiUsage');
 const { accessSummary } = require('../utils/planAccess');
 const { createCreditCheckout } = require('../utils/stripeCredits');
 const {
@@ -167,6 +168,32 @@ async function sendCreditStatus(req, res) {
 
 settingsRouter.get('/me', sendCreditStatus);
 settingsRouter.get('/me/ai-credits', sendCreditStatus);
+
+function usageListItem(row) {
+  const serverSuccess = row.usedUserKey === false && row.success === true;
+  return {
+    createdAt: isoOrNull(row.createdAt),
+    feature: typeof row.feature === 'string' ? row.feature : '',
+    creditCost: serverSuccess ? 1 : 0,
+    success: row.success === true,
+  };
+}
+
+// GET /api/users/me/ai-usage. The caller's rows only. Login JWT, not an agent key.
+settingsRouter.get('/me/ai-usage', async (req, res) => {
+  try {
+    if (!requireLoginJwt(req, res)) return;
+    const rows = await AiUsage.find({ userId: callerId(req) })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select('createdAt feature usedUserKey success')
+      .lean();
+    return res.json(rows.map(usageListItem));
+  } catch (err) {
+    console.error('AI usage list failed');
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // POST /api/users/me/ai-credits/checkout. Any logged-in user. Returns a Stripe URL.
 settingsRouter.post('/me/ai-credits/checkout', async (req, res) => {
