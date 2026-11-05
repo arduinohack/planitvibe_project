@@ -132,23 +132,10 @@ async function defaultPost(url, body, headers) {
   };
 }
 
-async function recordInsufficient(userId) {
-  const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return;
-  await recordAiUsage({
-    userId: id,
-    feature: 'placeSearch',
-    provider: 'google',
-    usedUserKey: false,
-    success: false,
-    error: INSUFFICIENT_MESSAGE,
-  });
-}
-
-// Places API (New) Text Search. A server-key balance above zero uses Pro and
-// deducts 0.5 after a successful response. Zero uses Essentials (IDs Only)
-// and deducts nothing. A user-owned key stays on Pro and does not change the
-// balance. Does not write a plan or an activity.
+// Places API (New) Text Search. A balance above zero uses Pro. Zero uses
+// Essentials (IDs Only). A user-owned key stays on Pro. Typing does not
+// deduct credits and does not write AiUsage. Selection charges separately.
+// Does not write a plan or an activity.
 async function searchPlaces(query, { post, userId, aiClient } = {}) {
   const key = googleMapsKey();
   if (!key) {
@@ -180,18 +167,43 @@ async function searchPlaces(query, { post, userId, aiClient } = {}) {
     const msg = redactKey(parsed.error || 'Could not search places', key);
     return { status: 502, msg };
   }
-  if (idOnly) {
-    await recordInsufficient(userId);
-    return { status: 200, places: parsed.places, idOnly: true };
-  }
+  return { status: 200, places: parsed.places, idOnly };
+}
+
+// Charges 0.5 when a result is chosen, unless the caller has a user-owned key.
+// A short balance is 402 and writes nothing.
+async function selectPlace({ userId, googlePlaceId, query, aiClient } = {}) {
+  const id = String(googlePlaceId || '').trim();
+  const q = String(query || '').trim();
+  if (!id) return { status: 400, msg: 'Google Place ID is required' };
+  if (!q) return { status: 400, msg: 'Query is required' };
+
+  const ownKey = hasOwnKey(aiClient);
   if (!ownKey) {
-    await deduct(userId, PLACES_CREDIT_COST);
+    const balance = await getBalance(userId);
+    if (!(balance >= PLACES_CREDIT_COST)) {
+      return { status: 402, msg: INSUFFICIENT_MESSAGE };
+    }
+    const paid = await deduct(userId, PLACES_CREDIT_COST);
+    if (!paid || !paid.ok) {
+      return { status: 402, msg: INSUFFICIENT_MESSAGE };
+    }
   }
-  return { status: 200, places: parsed.places };
+
+  await recordAiUsage({
+    userId,
+    feature: 'placeSearch',
+    provider: 'google',
+    usedUserKey: ownKey,
+    success: true,
+    credits: ownKey ? undefined : PLACES_CREDIT_COST,
+  });
+  return { status: 200 };
 }
 
 module.exports = {
   searchPlaces,
+  selectPlace,
   searchRequest,
   placesFromPayload,
   SEARCH_URL,

@@ -115,6 +115,14 @@ describe('GET /api/users/me/ai-usage', () => {
       createdAt: new Date('2026-07-03T12:00:00.000Z'),
     });
     await usageRow(ada.userId, {
+      feature: 'placeSearch',
+      provider: 'google',
+      usedUserKey: false,
+      success: true,
+      credits: 0.5,
+      createdAt: new Date('2026-07-04T12:00:00.000Z'),
+    });
+    await usageRow(ada.userId, {
       feature: 'suggest',
       usedUserKey: false,
       success: false,
@@ -124,6 +132,12 @@ describe('GET /api/users/me/ai-usage', () => {
     const listed = await request(app).get(USAGE).set(bearer(ada.token));
     expect(listed.status).toBe(200);
     expect(listed.body).toEqual([
+      {
+        createdAt: '2026-07-04T12:00:00.000Z',
+        feature: 'placeSearch',
+        creditCost: 0.5,
+        success: true,
+      },
       {
         createdAt: '2026-07-03T12:00:00.000Z',
         feature: 'command',

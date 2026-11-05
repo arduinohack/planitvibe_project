@@ -169,12 +169,17 @@ async function sendCreditStatus(req, res) {
 settingsRouter.get('/me', sendCreditStatus);
 settingsRouter.get('/me/ai-credits', sendCreditStatus);
 
+function usageCreditCost(row) {
+  if (row.usedUserKey !== false || row.success !== true) return 0;
+  if (row.feature === 'placeSearch') return 0.5;
+  return 1;
+}
+
 function usageListItem(row) {
-  const serverSuccess = row.usedUserKey === false && row.success === true;
   return {
     createdAt: isoOrNull(row.createdAt),
     feature: typeof row.feature === 'string' ? row.feature : '',
-    creditCost: serverSuccess ? 1 : 0,
+    creditCost: usageCreditCost(row),
     success: row.success === true,
   };
 }

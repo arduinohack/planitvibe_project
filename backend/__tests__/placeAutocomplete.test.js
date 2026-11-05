@@ -197,7 +197,7 @@ describe('GET /api/places/autocomplete', () => {
     expect(url).not.toContain('test-key');
     expect(JSON.stringify(body)).not.toContain('test-key');
     expect(JSON.stringify(found.body)).not.toContain('test-key');
-    expect(await getBalance(grace.userId)).toBe(1.5);
+    expect(await getBalance(grace.userId)).toBe(2);
     expect(await AiUsage.countDocuments({ feature: 'placeSearch' })).toBe(0);
   });
 
@@ -244,12 +244,7 @@ describe('GET /api/places/autocomplete', () => {
       /displayName|formattedAddress|location|timeZone|rating|userRatingCount|priceLevel/,
     );
     expect(await getBalance(ada.userId)).toBe(0);
-    const rows = await AiUsage.find({ feature: 'placeSearch' }).lean();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].success).toBe(false);
-    expect(rows[0].error).toBe('Insufficient AI credits');
-    expect(rows[0].provider).toBe('google');
-    expect(rows[0].credits == null).toBe(true);
+    expect(await AiUsage.countDocuments({ feature: 'placeSearch' })).toBe(0);
   });
 
   test('a user-owned key stays on Pro and does not change the balance', async () => {
@@ -339,5 +334,99 @@ describe('GET /api/places/autocomplete', () => {
     expect(missing.status).toBe(401);
     expect(missing.body.message).toBe('No token, authorization denied');
     expect(axios.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/places/select', () => {
+  test('selecting a place deducts 0.5 and records placeSearch', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-select@example.com',
+    });
+    await createPlan(ada.token);
+    await setCredits(ada.userId, 0.5);
+
+    const selected = await request(app)
+      .post('/api/places/select')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ googlePlaceId: PLACE_ID, query: 'Cafe Paris' });
+
+    expect(selected.status).toBe(200);
+    expect(selected.body).toEqual({ ok: true });
+    expect(await getBalance(ada.userId)).toBe(0);
+    const rows = await AiUsage.find({ feature: 'placeSearch' }).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].success).toBe(true);
+    expect(rows[0].usedUserKey).toBe(false);
+    expect(rows[0].credits).toBe(0.5);
+    expect(rows[0].provider).toBe('google');
+
+    const listed = await request(app)
+      .get('/api/users/me/ai-usage')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual([
+      {
+        createdAt: rows[0].createdAt.toISOString(),
+        feature: 'placeSearch',
+        creditCost: 0.5,
+        success: true,
+      },
+    ]);
+  });
+
+  test('a balance under 0.5 is 402 and does not deduct', async () => {
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-select-short@example.com',
+    });
+    await createPlan(ada.token);
+    await setCredits(ada.userId, 0.4);
+
+    const denied = await request(app)
+      .post('/api/places/select')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ googlePlaceId: PLACE_ID, query: 'Cafe Paris' });
+
+    expect(denied.status).toBe(402);
+    expect(denied.body).toEqual({ message: 'Insufficient AI credits' });
+    expect(await getBalance(ada.userId)).toBe(0.4);
+    expect(await AiUsage.countDocuments({ feature: 'placeSearch' })).toBe(0);
+  });
+
+  test('a user-owned key selects without changing the balance', async () => {
+    process.env.AI_KEY_ENCRYPTION_SECRET = SECRET;
+    const ada = await registerAndLogin({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada-select-key@example.com',
+    });
+    await createPlan(ada.token);
+    await setCredits(ada.userId, 0);
+    const saved = await request(app)
+      .put('/api/users/me/ai-settings')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ aiProvider: 'xai', apiKey: USER_KEY });
+    expect(saved.status).toBe(200);
+
+    const selected = await request(app)
+      .post('/api/places/select')
+      .set('Authorization', `Bearer ${ada.token}`)
+      .send({ googlePlaceId: PLACE_ID, query: 'Cafe Paris' });
+
+    expect(selected.status).toBe(200);
+    expect(await getBalance(ada.userId)).toBe(0);
+    const rows = await AiUsage.find({ feature: 'placeSearch' }).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].usedUserKey).toBe(true);
+    expect(rows[0].success).toBe(true);
+    expect(rows[0].credits == null).toBe(true);
+
+    const listed = await request(app)
+      .get('/api/users/me/ai-usage')
+      .set('Authorization', `Bearer ${ada.token}`);
+    expect(listed.body[0].creditCost).toBe(0);
   });
 });

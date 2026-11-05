@@ -6,7 +6,7 @@ const PlanUser = require('../models/PlanUser');
 const { canonicalMembershipRole } = require('../middleware/roleCheck');
 const { getAiClient } = require('../utils/aiProvider');
 const { INSUFFICIENT_MESSAGE } = require('../utils/aiCredits');
-const { searchPlaces } = require('../utils/placeAutocomplete');
+const { searchPlaces, selectPlace } = require('../utils/placeAutocomplete');
 
 async function callerMaySearchPlaces(callerId) {
   if (!callerId) return false;
@@ -21,8 +21,8 @@ async function callerMaySearchPlaces(callerId) {
 }
 
 // GET /api/places/autocomplete?q=
-// Owner or Collaborator. Text Search Pro while credits remain, IDs Only at zero.
-// Does not write a plan or an activity.
+// Owner or Collaborator. Text Search Pro while the balance is above zero,
+// IDs Only at zero. Does not deduct credits or write AiUsage.
 router.get('/autocomplete', authMiddleware, async (req, res) => {
   try {
     const callerId = req.user.userId || req.user.id;
@@ -48,6 +48,36 @@ router.get('/autocomplete', authMiddleware, async (req, res) => {
     return res.json(result.places);
   } catch (err) {
     console.error('Place autocomplete error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/places/select. Owner or Collaborator. Charges 0.5 on selection.
+router.post('/select', authMiddleware, async (req, res) => {
+  try {
+    const callerId = req.user.userId || req.user.id;
+    const allowed = await callerMaySearchPlaces(callerId);
+    if (!allowed) {
+      return res.status(403).json({
+        message: 'Only Owner or Collaborator can select a place',
+      });
+    }
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const aiClient = await getAiClient(req.user);
+    const result = await selectPlace({
+      userId: callerId,
+      googlePlaceId: body.googlePlaceId,
+      query: body.query,
+      aiClient,
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ message: result.msg });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Place select error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });
