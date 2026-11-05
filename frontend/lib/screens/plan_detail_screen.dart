@@ -464,11 +464,11 @@ String _pdfClock(DateTime? instant, String zone) {
 
 String _durationLabel(Activity activity) {
   final minutes = activity.duration?.inMinutes;
-  if (minutes != null) return '$minutes min';
+  if (minutes != null) return _cardHoursAndMinutes(minutes);
   final start = activity.startTime;
   final end = activity.endTime;
   if (start != null && end != null) {
-    return '${end.difference(start).inMinutes} min';
+    return _cardHoursAndMinutes(end.difference(start).inMinutes);
   }
   return 'not set';
 }
@@ -492,7 +492,7 @@ String? _cardStatusLabel(String? status) {
   }
 }
 
-/// Card-only duration. Hours are not padded. Minutes are always two digits.
+/// Card and PDF duration. Hours are not padded. Minutes are always two digits.
 String _cardHoursAndMinutes(int minutes) {
   final negative = minutes < 0;
   final total = minutes.abs();
