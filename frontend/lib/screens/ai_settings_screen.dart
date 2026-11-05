@@ -8,7 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/api_client.dart' as api;
 import '../config/constants.dart';
 import '../models/membership_tier.dart';
+import '../providers/plan_provider.dart';
 import '../providers/user_provider.dart';
+import 'login_screen.dart';
 
 /// Whole balances stay whole. Any fraction shows one decimal, such as 2.5.
 String creditBalanceText(num value) {
@@ -70,6 +72,72 @@ String remainingMonthlyLine(num? value) {
 String purchasedCreditsLine(num? value) {
   if (value == null) return 'Purchased credits: —';
   return 'Purchased credits: ${creditBalanceText(value)}';
+}
+
+class AiUsageEntry {
+  const AiUsageEntry({
+    required this.createdAt,
+    required this.feature,
+    required this.creditCost,
+    required this.success,
+  });
+
+  final String createdAt;
+  final String feature;
+  final int creditCost;
+  final bool success;
+}
+
+/// Stored feature names as the settings list shows them.
+String aiUsageFeatureLabel(String feature) {
+  switch (feature.trim()) {
+    case 'paste':
+      return 'Paste';
+    case 'suggest':
+      return 'Suggest';
+    case 'command':
+      return 'AI edit';
+    case 'placeSearch':
+      return 'Place search';
+    default:
+      final text = feature.trim();
+      return text.isEmpty ? 'AI' : text;
+  }
+}
+
+/// Device-zone date and time. Blank or unreadable stays an em dash.
+String aiUsageWhenText(String? iso) {
+  final text = iso?.trim() ?? '';
+  if (text.isEmpty) return '—';
+  final parsed = DateTime.tryParse(text);
+  if (parsed == null) return '—';
+  return DateFormat.yMMMd().add_jm().format(parsed.toLocal());
+}
+
+/// Newest first. The server already sorts; this keeps that order on the device.
+List<AiUsageEntry> aiUsageFromBody(Object? body) {
+  if (body is! List) return const [];
+  final rows = <AiUsageEntry>[];
+  for (final item in body) {
+    if (item is! Map) continue;
+    final feature = item['feature'];
+    final created = item['createdAt'];
+    final cost = item['creditCost'];
+    rows.add(
+      AiUsageEntry(
+        createdAt: created is String ? created.trim() : '',
+        feature: feature is String ? feature : '',
+        creditCost: cost is num ? cost.round() : 0,
+        success: item['success'] == true,
+      ),
+    );
+  }
+  rows.sort((a, b) {
+    final left = DateTime.tryParse(a.createdAt)?.millisecondsSinceEpoch ?? 0;
+    final right = DateTime.tryParse(b.createdAt)?.millisecondsSinceEpoch ?? 0;
+    return right.compareTo(left);
+  });
+  return rows;
 }
 
 /// Every paid tier except the current one, lowest first.
@@ -187,9 +255,11 @@ class AiSettingsScreen extends StatefulWidget {
 
 class _AiSettingsScreenState extends State<AiSettingsScreen> {
   SubscriptionSettings _status = SubscriptionSettings.empty;
+  List<AiUsageEntry> _usage = const [];
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  String? _usageError;
 
   @override
   void initState() {
@@ -209,6 +279,19 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     return Provider.of<UserProvider>(context, listen: false).token;
   }
 
+  Future<void> _endSession() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+    planProvider.clearPlans();
+    await userProvider.logout();
+    if (!mounted) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
   Future<void> _load() async {
     final token = _token;
     if (token == null || token.isEmpty) {
@@ -221,40 +304,64 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
       return;
     }
     try {
-      final response = await api.get(
+      final headers = {'Authorization': 'Bearer $token'};
+      final creditResponse = await api.get(
         Uri.parse('$backendBaseUrl$apiUserAiCredits'),
-        headers: {'Authorization': 'Bearer $token'},
+        headers: headers,
       );
       if (!mounted) return;
-      if (response.statusCode != 200) {
-        setState(() {
-          _loading = false;
-          _busy = false;
-          _error = _apiMessage(response.body, 'Could not load AI settings');
-        });
+      if (creditResponse.statusCode == 401) {
+        await _endSession();
         return;
       }
-      final creditBody = json.decode(response.body);
-      if (creditBody is! Map) {
-        setState(() {
-          _loading = false;
-          _busy = false;
-          _error = 'Could not load AI settings';
-        });
+      SubscriptionSettings? nextStatus;
+      String? nextError;
+      if (creditResponse.statusCode != 200) {
+        nextError = _apiMessage(creditResponse.body, 'Could not load AI settings');
+      } else {
+        final creditBody = json.decode(creditResponse.body);
+        if (creditBody is! Map) {
+          nextError = 'Could not load AI settings';
+        } else {
+          final status = subscriptionSettingsFromBody(creditBody);
+          if (status.monthlyCreditsRemaining == null ||
+              status.purchasedCredits == null) {
+            nextError = 'Could not load AI settings';
+          } else {
+            nextStatus = status;
+          }
+        }
+      }
+
+      final usageResponse = await api.get(
+        Uri.parse('$backendBaseUrl$apiUserAiUsage'),
+        headers: headers,
+      );
+      if (!mounted) return;
+      if (usageResponse.statusCode == 401) {
+        await _endSession();
         return;
       }
-      final status = subscriptionSettingsFromBody(creditBody);
-      if (status.monthlyCreditsRemaining == null || status.purchasedCredits == null) {
-        setState(() {
-          _loading = false;
-          _busy = false;
-          _error = 'Could not load AI settings';
-        });
-        return;
+      List<AiUsageEntry> nextUsage = const [];
+      String? usageError;
+      if (usageResponse.statusCode != 200) {
+        usageError = _apiMessage(
+          usageResponse.body,
+          'Could not load recent AI usage',
+        );
+      } else {
+        final usageBody = json.decode(usageResponse.body);
+        if (usageBody is! List) {
+          usageError = 'Could not load recent AI usage';
+        } else {
+          nextUsage = aiUsageFromBody(usageBody);
+        }
       }
       setState(() {
-        _status = status;
-        _error = null;
+        if (nextStatus != null) _status = nextStatus;
+        _usage = nextUsage;
+        _usageError = usageError;
+        _error = nextError;
         _loading = false;
         _busy = false;
       });
@@ -407,6 +514,39 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Recent AI usage',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_usageError != null)
+                    Text(
+                      _usageError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    )
+                  else if (_usage.isEmpty)
+                    const Text('No recent AI usage')
+                  else
+                    for (final row in _usage)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(aiUsageWhenText(row.createdAt)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(aiUsageFeatureLabel(row.feature)),
+                            ),
+                            Text('${row.creditCost}'),
+                          ],
+                        ),
+                      ),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     Text(

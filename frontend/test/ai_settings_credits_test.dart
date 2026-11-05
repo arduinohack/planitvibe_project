@@ -102,6 +102,8 @@ void main() {
     expect(find.text('Buy 100 credits'), findsOneWidget);
     expect(find.text('Buy 500 credits'), findsOneWidget);
     expect(find.text('Refresh'), findsOneWidget);
+    expect(find.text('Recent AI usage'), findsOneWidget);
+    expect(find.text('No recent AI usage'), findsOneWidget);
     _expectKeyControlsGone(tester);
   });
 
@@ -133,6 +135,33 @@ void main() {
     expect(creditBalanceText(2), '2');
     expect(creditBalanceText(2.5), '2.5');
     expect(creditBalanceText(0.5), '0.5');
+  });
+
+  test('usage rows use readable labels and stay newest first', () {
+    expect(aiUsageFeatureLabel('paste'), 'Paste');
+    expect(aiUsageFeatureLabel('suggest'), 'Suggest');
+    expect(aiUsageFeatureLabel('command'), 'AI edit');
+    final rows = aiUsageFromBody([
+      {
+        'createdAt': '2026-01-15T17:00:00.000Z',
+        'feature': 'paste',
+        'creditCost': 0,
+        'success': false,
+      },
+      {
+        'createdAt': '2026-07-15T16:00:00.000Z',
+        'feature': 'command',
+        'creditCost': 1,
+        'success': true,
+      },
+    ]);
+    expect(rows, hasLength(2));
+    expect(rows.first.feature, 'command');
+    expect(rows.first.creditCost, 1);
+    expect(aiUsageFeatureLabel(rows.first.feature), 'AI edit');
+    expect(rows.last.creditCost, 0);
+    expect(aiUsageWhenText(rows.first.createdAt), isNot('—'));
+    expect(aiUsageWhenText(''), '—');
   });
 }
 

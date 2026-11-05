@@ -24,6 +24,7 @@ const String apiAuthResendVerification = '/api/auth/resend-verification';
 const String apiUsersUpdate = '/api/auth/users/{id}';
 const String apiUserAiSettings = '/api/users/me/ai-settings';
 const String apiUserAiCredits = '/api/users/me/ai-credits';
+const String apiUserAiUsage = '/api/users/me/ai-usage';
 const String apiUserAiCreditsCheckout = '/api/users/me/ai-credits/checkout';
 const String apiPlans = '/api/plans';
 const String apiTemplates = '/api/templates';
