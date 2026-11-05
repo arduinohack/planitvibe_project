@@ -174,19 +174,27 @@ String subscriptionMoney(num amount) {
 const int planItVibeMonthlyDollars = 5;
 const int plusMonthlyDollars = 10;
 const int proMonthlyDollars = 25;
+const int planItVibeMonthlyCredits = 16;
+const int plusMonthlyCredits = 20;
+const int proMonthlyCredits = 50;
 const int credits100Dollars = 10;
 const int credits500Dollars = 32;
 
 const String subscriptionsHeading = 'Subscriptions';
 const String plusActiveLine = 'Plus active';
+const String proActiveLine = 'Pro active';
 
-/// Display price for a plan. Checkout stays on the Plus button only.
-String planOfferLine(String name, num dollarsPerMonth) {
-  return '$name — ${subscriptionMoney(dollarsPerMonth)}/month';
+/// Price and the AI credits renewed each month. Checkout stays on Plus and Pro.
+String planOfferLine(String name, num dollarsPerMonth, int monthlyCredits) {
+  return '$name — ${subscriptionMoney(dollarsPerMonth)}/month — $monthlyCredits AI Credits';
 }
 
 String upgradeToPlusLabel() {
   return 'Upgrade to Plus — ${subscriptionMoney(plusMonthlyDollars)}/month';
+}
+
+String upgradeToProLabel() {
+  return 'Upgrade to Pro — ${subscriptionMoney(proMonthlyDollars)}/month';
 }
 
 String buyCreditsLabel(int credits, num dollars) {
@@ -524,12 +532,28 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    planOfferLine(tierPlanItVibeName, planItVibeMonthlyDollars),
+                    planOfferLine(
+                      tierPlanItVibeName,
+                      planItVibeMonthlyDollars,
+                      planItVibeMonthlyCredits,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  Text(planOfferLine(tierPlusName, plusMonthlyDollars)),
+                  Text(
+                    planOfferLine(
+                      tierPlusName,
+                      plusMonthlyDollars,
+                      plusMonthlyCredits,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(planOfferLine(tierProName, proMonthlyDollars)),
+                  Text(
+                    planOfferLine(
+                      tierProName,
+                      proMonthlyDollars,
+                      proMonthlyCredits,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 12,
@@ -537,12 +561,21 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                     children: [
                       if (tier == tierPlus)
                         const Text(plusActiveLine)
-                      else
+                      else if (tier != tierPro)
                         OutlinedButton(
                           onPressed: _busy
                               ? null
                               : () => _buy(_packForTier(tierPlus)),
                           child: Text(upgradeToPlusLabel()),
+                        ),
+                      if (tier == tierPro)
+                        const Text(proActiveLine)
+                      else
+                        OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _buy(_packForTier(tierPro)),
+                          child: Text(upgradeToProLabel()),
                         ),
                       OutlinedButton(
                         onPressed: _busy ? null : () => _buy('100'),

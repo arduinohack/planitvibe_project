@@ -32,10 +32,11 @@ void main() {
       'Purchased credits: 40',
       aiProviderLine,
       subscriptionsHeading,
-      'PlanItVibe — \$5/month',
-      'PlanItVibe Plus — \$10/month',
-      'PlanItVibe Pro — \$25/month',
+      'PlanItVibe — \$5/month — 16 AI Credits',
+      'PlanItVibe Plus — \$10/month — 20 AI Credits',
+      'PlanItVibe Pro — \$25/month — 50 AI Credits',
       'Upgrade to Plus — \$10/month',
+      'Upgrade to Pro — \$25/month',
       'Buy 100 credits (\$10)',
       'Buy 500 credits (\$32)',
     ]);
@@ -44,6 +45,7 @@ void main() {
     expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
     expect(find.text('Downgrade to PlanItVibe'), findsNothing);
     expect(find.text(plusActiveLine), findsNothing);
+    expect(find.text(proActiveLine), findsNothing);
     _expectKeyControlsGone(tester);
   });
 
@@ -73,10 +75,11 @@ void main() {
       'Purchased credits: 0',
       aiProviderLine,
       subscriptionsHeading,
-      'PlanItVibe — \$5/month',
-      'PlanItVibe Plus — \$10/month',
-      'PlanItVibe Pro — \$25/month',
+      'PlanItVibe — \$5/month — 16 AI Credits',
+      'PlanItVibe Plus — \$10/month — 20 AI Credits',
+      'PlanItVibe Pro — \$25/month — 50 AI Credits',
       plusActiveLine,
+      'Upgrade to Pro — \$25/month',
       'Buy 100 credits (\$10)',
       'Buy 500 credits (\$32)',
     ]);
@@ -85,6 +88,26 @@ void main() {
     expect(find.text('Downgrade to PlanItVibe'), findsNothing);
     expect(find.text('Downgrade to PlanItVibe Plus'), findsNothing);
     expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
+    expect(find.text(proActiveLine), findsNothing);
+    _expectKeyControlsGone(tester);
+  });
+
+  testWidgets('a Pro subscriber sees Pro active', (tester) async {
+    await _pump(
+      tester,
+      const SubscriptionSettings(
+        subscriptionTier: tierPro,
+        plansOwned: 4,
+        unlimitedPlans: true,
+        monthlyCreditsRemaining: 50,
+        purchasedCredits: 0,
+      ),
+    );
+
+    expect(find.text(proActiveLine), findsOneWidget);
+    expect(find.text('Upgrade to Pro — \$25/month'), findsNothing);
+    expect(find.text('Upgrade to Plus — \$10/month'), findsNothing);
+    expect(find.text(plusActiveLine), findsNothing);
     _expectKeyControlsGone(tester);
   });
 
@@ -109,10 +132,11 @@ void main() {
       'Purchased credits: 0',
       aiProviderLine,
       subscriptionsHeading,
-      'PlanItVibe — \$5/month',
-      'PlanItVibe Plus — \$10/month',
-      'PlanItVibe Pro — \$25/month',
+      'PlanItVibe — \$5/month — 16 AI Credits',
+      'PlanItVibe Plus — \$10/month — 20 AI Credits',
+      'PlanItVibe Pro — \$25/month — 50 AI Credits',
       'Upgrade to Plus — \$10/month',
+      'Upgrade to Pro — \$25/month',
       'Buy 100 credits (\$10)',
       'Buy 500 credits (\$32)',
       'Recent AI usage',
@@ -122,6 +146,7 @@ void main() {
     expect(find.text('Upgrade to PlanItVibe'), findsNothing);
     expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
     expect(find.text(plusActiveLine), findsNothing);
+    expect(find.text(proActiveLine), findsNothing);
     expect(find.text('Buy 100 credits (\$10)'), findsOneWidget);
     expect(find.text('Buy 500 credits (\$32)'), findsOneWidget);
     expect(find.text('Refresh'), findsOneWidget);
@@ -154,10 +179,20 @@ void main() {
     expect(currentSubscriptionLine(null), 'Current subscription: Free trial or none');
     expect(subscriptionMoney(5), r'$5');
     expect(subscriptionMoney(1000), r'$1,000');
-    expect(planOfferLine(tierPlanItVibeName, 5), 'PlanItVibe — \$5/month');
-    expect(planOfferLine(tierPlusName, 10), 'PlanItVibe Plus — \$10/month');
-    expect(planOfferLine(tierProName, 25), 'PlanItVibe Pro — \$25/month');
+    expect(
+      planOfferLine(tierPlanItVibeName, 5, 16),
+      'PlanItVibe — \$5/month — 16 AI Credits',
+    );
+    expect(
+      planOfferLine(tierPlusName, 10, 20),
+      'PlanItVibe Plus — \$10/month — 20 AI Credits',
+    );
+    expect(
+      planOfferLine(tierProName, 25, 50),
+      'PlanItVibe Pro — \$25/month — 50 AI Credits',
+    );
     expect(upgradeToPlusLabel(), 'Upgrade to Plus — \$10/month');
+    expect(upgradeToProLabel(), 'Upgrade to Pro — \$25/month');
     expect(buyCreditsLabel(100, 10), 'Buy 100 credits (\$10)');
     expect(buyCreditsLabel(500, 32), 'Buy 500 credits (\$32)');
   });
