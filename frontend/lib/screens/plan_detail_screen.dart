@@ -4359,6 +4359,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
   bool _askingToLeave = false;
   String? _error;
   Timer? _placeSearchTimer;
+  bool _placeSelectBusy = false;
   int _placeSearchSeq = 0;
   String _placeSearchSeed = '';
   List<PlaceSuggestion> _placeSuggestions = const [];
@@ -5682,17 +5683,46 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
     });
   }
 
-  void _selectPlace(PlaceSuggestion place) {
+  Future<void> _selectPlace(PlaceSuggestion place) async {
+    if (_placeSelectBusy) return;
     final idOnly = place.name.trim().isEmpty;
+    final query = _placeSearchController.text;
     final selection = applySearchedPlace(
       place: place,
-      query: _placeSearchController.text,
+      query: query,
       location: _locationController.text,
     );
     if (selection.googlePlaceId.isEmpty) return;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final planProvider = Provider.of<PlanProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _placeSelectBusy = true);
+    final charged = await planProvider.selectSearchedPlace(
+      googlePlaceId: selection.googlePlaceId,
+      query: query,
+      token: userProvider.token,
+    );
+    if (!mounted) return;
+    if (charged.status == 401) {
+      await _endSession();
+      return;
+    }
+    if (charged.status != 200) {
+      setState(() {
+        _placeSelectBusy = false;
+        _placeSearchError = charged.error ?? 'Could not select this place';
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(charged.error ?? 'Could not select this place'),
+        ),
+      );
+      return;
+    }
     _placeSearchTimer?.cancel();
     _placeSearchSeq += 1;
     setState(() {
+      _placeSelectBusy = false;
       _googlePlaceIdController.text = selection.googlePlaceId;
       if (selection.location != null) {
         _locationController.text = selection.location!;
@@ -5700,10 +5730,7 @@ class _ActivityFormDialogState extends State<_ActivityFormDialog> {
       _placeSuggestions = const [];
       _placeSearchError = null;
       _placeSearchMessage = null;
-      final shown = placeSearchResultLabel(
-        place: place,
-        query: _placeSearchController.text,
-      );
+      final shown = placeSearchResultLabel(place: place, query: query);
       if (shown.isNotEmpty) _placeSearchController.text = shown;
       if (!idOnly) _applySearchPlaceZone(place.timeZone);
     });

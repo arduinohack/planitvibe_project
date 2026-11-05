@@ -158,8 +158,21 @@ void main() {
     expect(rows, hasLength(2));
     expect(rows.first.feature, 'command');
     expect(rows.first.creditCost, 1);
+    expect(aiUsageCostText(rows.first.creditCost), '1.0');
+    expect(aiUsageCostText(0.5), '0.5');
+    expect(aiUsageCostText(0), '0.0');
     expect(aiUsageFeatureLabel(rows.first.feature), 'AI edit');
     expect(rows.last.creditCost, 0);
+    final places = aiUsageFromBody([
+      {
+        'createdAt': '2026-07-15T16:00:00.000Z',
+        'feature': 'placeSearch',
+        'creditCost': 0.5,
+        'success': true,
+      },
+    ]);
+    expect(places.single.creditCost, 0.5);
+    expect(aiUsageFeatureLabel(places.single.feature), 'Place search');
     expect(aiUsageWhenText(rows.first.createdAt), isNot('—'));
     expect(aiUsageWhenText(''), '—');
   });

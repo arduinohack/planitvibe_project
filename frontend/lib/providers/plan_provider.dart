@@ -421,6 +421,13 @@ class PlaceSuggestion {
   });
 }
 
+class PlaceSelectResult {
+  final int? status;
+  final String? error;
+
+  const PlaceSelectResult({this.status, this.error});
+}
+
 class PlaceSearchResult {
   final int? status;
   final String? error;
@@ -2596,6 +2603,41 @@ class PlanProvider extends ChangeNotifier {
     } catch (e) {
       logger.e('Error searching places: $e');
       return const PlaceSearchResult(error: 'Could not search places');
+    }
+  }
+
+  /// POST /api/places/select. 200 means the 0.5 charge was accepted.
+  /// 402 is insufficient credits and the form should stay unchanged.
+  Future<PlaceSelectResult> selectSearchedPlace({
+    required String googlePlaceId,
+    required String query,
+    required String? token,
+  }) async {
+    try {
+      if (token == null || token.isEmpty) {
+        return const PlaceSelectResult(status: 401);
+      }
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl$apiPlaceSelect'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({
+          'googlePlaceId': googlePlaceId.trim(),
+          'query': query.trim(),
+        }),
+      );
+      if (response.statusCode != 200) {
+        return PlaceSelectResult(
+          status: response.statusCode,
+          error: _apiErrorMessage(response.body),
+        );
+      }
+      return const PlaceSelectResult(status: 200);
+    } catch (e) {
+      logger.e('Error selecting a place: $e');
+      return const PlaceSelectResult(error: 'Could not select this place');
     }
   }
 

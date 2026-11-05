@@ -84,8 +84,13 @@ class AiUsageEntry {
 
   final String createdAt;
   final String feature;
-  final int creditCost;
+  final num creditCost;
   final bool success;
+}
+
+/// Usage costs print with one decimal: 0.0, 0.5, or 1.0.
+String aiUsageCostText(num value) {
+  return value.toDouble().toStringAsFixed(1);
 }
 
 /// Stored feature names as the settings list shows them.
@@ -127,7 +132,7 @@ List<AiUsageEntry> aiUsageFromBody(Object? body) {
       AiUsageEntry(
         createdAt: created is String ? created.trim() : '',
         feature: feature is String ? feature : '',
-        creditCost: cost is num ? cost.round() : 0,
+        creditCost: cost is num ? cost : 0,
         success: item['success'] == true,
       ),
     );
@@ -543,7 +548,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                             Expanded(
                               child: Text(aiUsageFeatureLabel(row.feature)),
                             ),
-                            Text('${row.creditCost}'),
+                            Text(aiUsageCostText(row.creditCost)),
                           ],
                         ),
                       ),

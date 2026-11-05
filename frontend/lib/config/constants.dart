@@ -43,6 +43,7 @@ const String apiPlanAiCommandApply = '/api/plans/{planId}/ai-command/apply';
 const String apiPlanOptimizeDay = '/api/plans/{planId}/optimize-day';
 const String apiPlanOptimizeDayApply = '/api/plans/{planId}/optimize-day/apply';
 const String apiPlaceAutocomplete = '/api/places/autocomplete';
+const String apiPlaceSelect = '/api/places/select';
 const String apiPlanInvite = '/api/plans/{planId}/invite';
 const String apiPlanInviteResend = '/api/plans/{planId}/invite/resend';
 const String apiActivities = '/api/activities';
