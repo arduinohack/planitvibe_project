@@ -31,12 +31,19 @@ void main() {
       'Remaining monthly credits: 11',
       'Purchased credits: 40',
       aiProviderLine,
-      'Upgrade to PlanItVibe Plus',
-      'Upgrade to PlanItVibe Pro',
+      subscriptionsHeading,
+      'PlanItVibe — \$5/month',
+      'PlanItVibe Plus — \$10/month',
+      'PlanItVibe Pro — \$25/month',
+      'Upgrade to Plus — \$10/month',
+      'Buy 100 credits (\$10)',
+      'Buy 500 credits (\$32)',
     ]);
     expect(find.text('Subscription started: —'), findsNothing);
     expect(find.text('Upgrade to PlanItVibe'), findsNothing);
+    expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
     expect(find.text('Downgrade to PlanItVibe'), findsNothing);
+    expect(find.text(plusActiveLine), findsNothing);
     _expectKeyControlsGone(tester);
   });
 
@@ -65,11 +72,19 @@ void main() {
       'Remaining monthly credits: 20',
       'Purchased credits: 0',
       aiProviderLine,
-      'Downgrade to PlanItVibe',
-      'Upgrade to PlanItVibe Pro',
+      subscriptionsHeading,
+      'PlanItVibe — \$5/month',
+      'PlanItVibe Plus — \$10/month',
+      'PlanItVibe Pro — \$25/month',
+      plusActiveLine,
+      'Buy 100 credits (\$10)',
+      'Buy 500 credits (\$32)',
     ]);
+    expect(find.text('Upgrade to Plus — \$10/month'), findsNothing);
     expect(find.text('Upgrade to PlanItVibe Plus'), findsNothing);
+    expect(find.text('Downgrade to PlanItVibe'), findsNothing);
     expect(find.text('Downgrade to PlanItVibe Plus'), findsNothing);
+    expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
     _expectKeyControlsGone(tester);
   });
 
@@ -93,14 +108,22 @@ void main() {
       'Remaining monthly credits: 15',
       'Purchased credits: 0',
       aiProviderLine,
-      'Upgrade to PlanItVibe',
-      'Upgrade to PlanItVibe Plus',
-      'Upgrade to PlanItVibe Pro',
+      subscriptionsHeading,
+      'PlanItVibe — \$5/month',
+      'PlanItVibe Plus — \$10/month',
+      'PlanItVibe Pro — \$25/month',
+      'Upgrade to Plus — \$10/month',
+      'Buy 100 credits (\$10)',
+      'Buy 500 credits (\$32)',
+      'Recent AI usage',
     ]);
     expect(find.text(autoSubscribedLine), findsNothing);
     expect(find.textContaining('Downgrade'), findsNothing);
-    expect(find.text('Buy 100 credits'), findsOneWidget);
-    expect(find.text('Buy 500 credits'), findsOneWidget);
+    expect(find.text('Upgrade to PlanItVibe'), findsNothing);
+    expect(find.text('Upgrade to PlanItVibe Pro'), findsNothing);
+    expect(find.text(plusActiveLine), findsNothing);
+    expect(find.text('Buy 100 credits (\$10)'), findsOneWidget);
+    expect(find.text('Buy 500 credits (\$32)'), findsOneWidget);
     expect(find.text('Refresh'), findsOneWidget);
     expect(find.text('Recent AI usage'), findsOneWidget);
     expect(find.text('No recent AI usage'), findsOneWidget);
@@ -129,6 +152,14 @@ void main() {
     expect(planLimitLine(unlimited: true), 'Plan limit: Unlimited');
     expect(planLimitLine(planLimit: 4), 'Plan limit: 4');
     expect(currentSubscriptionLine(null), 'Current subscription: Free trial or none');
+    expect(subscriptionMoney(5), r'$5');
+    expect(subscriptionMoney(1000), r'$1,000');
+    expect(planOfferLine(tierPlanItVibeName, 5), 'PlanItVibe — \$5/month');
+    expect(planOfferLine(tierPlusName, 10), 'PlanItVibe Plus — \$10/month');
+    expect(planOfferLine(tierProName, 25), 'PlanItVibe Pro — \$25/month');
+    expect(upgradeToPlusLabel(), 'Upgrade to Plus — \$10/month');
+    expect(buyCreditsLabel(100, 10), 'Buy 100 credits (\$10)');
+    expect(buyCreditsLabel(500, 32), 'Buy 500 credits (\$32)');
   });
 
   test('a fractional balance shows one decimal', () {
@@ -179,6 +210,10 @@ void main() {
 }
 
 Future<void> _pump(WidgetTester tester, SubscriptionSettings status) async {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
       home: ChangeNotifierProvider(

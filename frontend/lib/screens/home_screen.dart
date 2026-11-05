@@ -162,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
           PopupMenuButton<String>(
             tooltip: 'App menu',
             onSelected: (choice) {
-              if (choice == 'ai-settings') {
+              if (choice == 'ai-settings' || choice == 'subscriptions') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -175,6 +175,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _logOut();
             },
             itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'subscriptions',
+                child: Text('Subscriptions'),
+              ),
               PopupMenuItem<String>(
                 value: 'ai-settings',
                 child: Text('Subscription and AI Settings'),

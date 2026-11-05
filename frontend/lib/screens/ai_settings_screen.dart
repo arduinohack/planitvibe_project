@@ -162,6 +162,37 @@ String tierCheckoutLabel(String tierId, String? subscriptionTier) {
   return 'Upgrade to $name';
 }
 
+/// Whole dollars in the same currency family as activity costs: $5, $1,000.
+String subscriptionMoney(num amount) {
+  return NumberFormat.currency(
+    locale: 'en_US',
+    symbol: r'$',
+    decimalDigits: 0,
+  ).format(amount);
+}
+
+const int planItVibeMonthlyDollars = 5;
+const int plusMonthlyDollars = 10;
+const int proMonthlyDollars = 25;
+const int credits100Dollars = 10;
+const int credits500Dollars = 32;
+
+const String subscriptionsHeading = 'Subscriptions';
+const String plusActiveLine = 'Plus active';
+
+/// Display price for a plan. Checkout stays on the Plus button only.
+String planOfferLine(String name, num dollarsPerMonth) {
+  return '$name — ${subscriptionMoney(dollarsPerMonth)}/month';
+}
+
+String upgradeToPlusLabel() {
+  return 'Upgrade to Plus — ${subscriptionMoney(plusMonthlyDollars)}/month';
+}
+
+String buyCreditsLabel(int credits, num dollars) {
+  return 'Buy $credits credits (${subscriptionMoney(dollars)})';
+}
+
 class SubscriptionSettings {
   const SubscriptionSettings({
     this.subscriptionTier,
@@ -486,32 +517,40 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
                   Text(purchasedCreditsLine(status.purchasedCredits)),
                   const SizedBox(height: 8),
                   const Text(aiProviderLine),
+                  const SizedBox(height: 16),
+                  const Text(
+                    subscriptionsHeading,
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
+                  Text(
+                    planOfferLine(tierPlanItVibeName, planItVibeMonthlyDollars),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(planOfferLine(tierPlusName, plusMonthlyDollars)),
+                  const SizedBox(height: 8),
+                  Text(planOfferLine(tierProName, proMonthlyDollars)),
+                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
                     children: [
-                      for (final tierId in otherPaidTiers(tier))
-                        tierCheckoutLabel(tierId, tier).startsWith('Downgrade')
-                            ? TextButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => _buy(_packForTier(tierId)),
-                                child: Text(tierCheckoutLabel(tierId, tier)),
-                              )
-                            : OutlinedButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => _buy(_packForTier(tierId)),
-                                child: Text(tierCheckoutLabel(tierId, tier)),
-                              ),
+                      if (tier == tierPlus)
+                        const Text(plusActiveLine)
+                      else
+                        OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _buy(_packForTier(tierPlus)),
+                          child: Text(upgradeToPlusLabel()),
+                        ),
                       OutlinedButton(
                         onPressed: _busy ? null : () => _buy('100'),
-                        child: const Text('Buy 100 credits'),
+                        child: Text(buyCreditsLabel(100, credits100Dollars)),
                       ),
                       OutlinedButton(
                         onPressed: _busy ? null : () => _buy('500'),
-                        child: const Text('Buy 500 credits'),
+                        child: Text(buyCreditsLabel(500, credits500Dollars)),
                       ),
                       TextButton(
                         onPressed: _busy ? null : _load,
