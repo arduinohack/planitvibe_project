@@ -45,6 +45,7 @@ header {
   display: block;
   border-radius: 12px;
   background: #fff;
+  object-fit: cover;
 }
 
 nav {

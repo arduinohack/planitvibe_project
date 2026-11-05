@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PlanItVibe — A shared trip and event planner</title>
+  <link rel="icon" type="image/png" href="planitvibe_logo.png">
   <meta name="description" content="PlanItVibe lets you build and reshape group itineraries: insert and reorder stops, track reservations and costs, get Google Maps directions, and let Travelers link their own version of the plan. Start free for 14 days.">
   <style>
     :root { --ink: #1a2332; --muted: #5c6b7a; --accent: #0d6e6e; --bg: #f7f5f2; --card: #fff; }
@@ -13,6 +14,8 @@
     header, main, footer { max-width: 920px; margin: 0 auto; padding: 0 1.25rem; }
     nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; font-family: system-ui, sans-serif; }
     nav a { text-decoration: none; margin-left: 1rem; }
+    .brand { display: inline-flex; align-items: center; gap: 0.55rem; margin-left: 0; }
+    .brand img { display: block; width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
     .hero { padding: 2rem 0 2.5rem; }
     .hero h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 1rem; }
     .hero p { font-size: 1.15rem; color: var(--muted); max-width: 40rem; }
@@ -35,7 +38,7 @@
 <body>
   <header>
     <nav>
-      <a href="#top" id="top"><strong>PlanItVibe</strong></a>
+      <a class="brand" href="#top" id="top"><img src="planitvibe_logo.png" alt=""><strong>PlanItVibe</strong></a>
       <span>
         <a href="#features">Features</a>
         <a href="#pricing">Pricing</a>
