@@ -227,6 +227,33 @@ button:hover {
   background: #2c3626;
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button:disabled:hover {
+  background: #3d4a34;
+}
+
+.invite-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.invite-controls p {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
 #logout {
   background: transparent;
   color: #1c1915;
@@ -262,7 +289,8 @@ p[role="alert"],
 #plan-delete-status.is-error,
 #activity-delete-status.is-error,
 #logs-status.is-error,
-#settings-status.is-error {
+#settings-status.is-error,
+#allowed-status.is-error {
   font-family: var(--wv-error-font);
   font-size: var(--wv-error-size);
   color: var(--wv-error-color);

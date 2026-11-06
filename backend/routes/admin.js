@@ -1,5 +1,8 @@
 const express = require('express');
 const User = require('../models/User');
+const AllowedEmail = require('../models/AllowedEmail');
+const { signupInviteMode, setSignupInviteMode } = require('../utils/invites/signupInviteConfig');
+const { sendSignupInvite, signupInviteFrom, signupUrlFor } = require('../utils/invites/sendSignupInvite');
 const Plan = require('../models/Plan');
 const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
@@ -469,6 +472,192 @@ router.post('/published-templates/:id/unpublish', async (req, res) => {
     return res.json({ template: ownerCard(doc) });
   } catch (err) {
     console.error(`Admin unpublish template failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+function normalizeAllowedEmail(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function isAllowedEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function allowedEmailNote(value) {
+  if (value == null) return '';
+  if (typeof value !== 'string') return null;
+  return value.trim();
+}
+
+function emailFromParam(rawParam) {
+  let raw = rawParam || '';
+  try {
+    raw = decodeURIComponent(raw);
+  } catch (err) {
+    raw = rawParam || '';
+  }
+  return normalizeAllowedEmail(raw);
+}
+
+async function markInviteSent(row) {
+  try {
+    const result = await sendSignupInvite({
+      email: row.email,
+      signupUrl: signupUrlFor(row.email),
+      from: signupInviteFrom(),
+    });
+    if (!result.success) {
+      console.error(`Signup invite failed for ${row.email}: ${result.error}`);
+      return false;
+    }
+    row.invitedAt = new Date();
+    await row.save();
+    return true;
+  } catch (err) {
+    console.error(`Signup invite failed for ${row.email}: ${err.message}`);
+    return false;
+  }
+}
+
+// GET /api/admin/allowed-emails. userCreatedAt is set when that address has an account.
+router.get('/allowed-emails', async (req, res) => {
+  try {
+    const rows = await AllowedEmail.find({})
+      .select('email note createdAt invitedAt')
+      .sort({ createdAt: -1, email: 1 })
+      .lean();
+    const addresses = rows.map((row) => row.email).filter(Boolean);
+    const users = addresses.length
+      ? await User.find({
+        $expr: { $in: [{ $toLower: '$email' }, addresses] },
+      }).select('email createdAt').lean()
+      : [];
+    const createdByEmail = new Map();
+    for (const user of users) {
+      const key = normalizeAllowedEmail(user.email);
+      if (!key || createdByEmail.has(key) || !user.createdAt) continue;
+      createdByEmail.set(key, user.createdAt);
+    }
+    const emails = rows.map((row) => {
+      const item = {
+        email: row.email,
+        note: typeof row.note === 'string' ? row.note : '',
+        createdAt: row.createdAt,
+        invitedAt: row.invitedAt || null,
+      };
+      const userCreatedAt = createdByEmail.get(row.email);
+      if (userCreatedAt) item.userCreatedAt = userCreatedAt;
+      return item;
+    });
+    const mode = await signupInviteMode();
+    const unsent = rows.filter((row) => !row.invitedAt).length;
+    return res.json({ emails, mode, unsent });
+  } catch (err) {
+    console.error(`Admin allowed emails list failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/admin/allowed-emails/mode. Body { mode: automatic | manual }.
+router.put('/allowed-emails/mode', async (req, res) => {
+  try {
+    const mode = String((req.body && req.body.mode) || '').trim().toLowerCase();
+    if (mode !== 'automatic' && mode !== 'manual') {
+      return res.status(400).json({ message: 'Mode must be automatic or manual' });
+    }
+    await setSignupInviteMode(mode);
+    return res.json({ mode });
+  } catch (err) {
+    console.error(`Admin signup invite mode failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/admin/allowed-emails. Body { email, note? }.
+router.post('/allowed-emails', async (req, res) => {
+  const email = normalizeAllowedEmail(req.body && req.body.email);
+  const note = allowedEmailNote(req.body && req.body.note);
+  if (!email) return res.status(400).json({ message: 'Email is required' });
+  if (!isAllowedEmailAddress(email)) {
+    return res.status(400).json({ message: 'Email is not valid' });
+  }
+  if (note == null) return res.status(400).json({ message: 'Note must be text' });
+
+  let doc;
+  try {
+    doc = await AllowedEmail.create({ email, note });
+  } catch (err) {
+    if (err && err.code === 11000) {
+      return res.status(409).json({ message: 'Email is already allowed' });
+    }
+    console.error(`Admin allow email failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+
+  let invitedAt = null;
+  try {
+    if (await signupInviteMode() === 'automatic') {
+      const sent = await markInviteSent(doc);
+      if (sent) invitedAt = doc.invitedAt;
+    }
+  } catch (err) {
+    console.error(`Signup invite failed for ${doc.email}: ${err.message}`);
+  }
+
+  return res.status(201).json({
+    email: doc.email,
+    note: doc.note || '',
+    createdAt: doc.createdAt,
+    invitedAt,
+  });
+});
+
+// POST /api/admin/allowed-emails/send-invites. Sends every row whose invitedAt is null.
+router.post('/allowed-emails/send-invites', async (req, res) => {
+  try {
+    const rows = await AllowedEmail.find({ invitedAt: null }).sort({ email: 1 });
+    let sent = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const ok = await markInviteSent(row);
+      if (ok) sent += 1;
+      else failed += 1;
+    }
+    return res.json({ sent, failed });
+  } catch (err) {
+    console.error(`Admin send signup invites failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/admin/allowed-emails/:email/invite. Sends again and records the new time.
+router.post('/allowed-emails/:email/invite', async (req, res) => {
+  try {
+    const email = emailFromParam(req.params.email);
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+    const doc = await AllowedEmail.findOne({ email });
+    if (!doc) return res.status(404).json({ message: 'Email is not on the list' });
+    const sent = await markInviteSent(doc);
+    if (!sent) return res.status(502).json({ message: 'Invitation email failed' });
+    return res.json({ email: doc.email, invitedAt: doc.invitedAt });
+  } catch (err) {
+    console.error(`Admin resend signup invite failed: ${err.message}`);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/allowed-emails/:email
+router.delete('/allowed-emails/:email', async (req, res) => {
+  try {
+    const email = emailFromParam(req.params.email);
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+    const removed = await AllowedEmail.findOneAndDelete({ email });
+    if (!removed) return res.status(404).json({ message: 'Email is not on the list' });
+    return res.json({ email: removed.email });
+  } catch (err) {
+    console.error(`Admin remove allowed email failed: ${err.message}`);
     return res.status(500).json({ message: 'Server error' });
   }
 });

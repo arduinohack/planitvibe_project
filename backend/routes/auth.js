@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');  // For password hashing
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Invitation = require('../models/Invitation');
+const AllowedEmail = require('../models/AllowedEmail');
 const logger = require('../utils/logger');  // Added: Borrow exported logger from ../util/logger.js
 const authMiddleware = require('../middleware/auth.js');  // Add this line for token verification
 const { v4: uuidv4 } = require('uuid');  // For reset token
@@ -195,6 +196,13 @@ router.post('/register', registerLimiter, async (req, res) => {
     }
 
     const inviteEmail = normalizeEmail(email);
+    const allowedEmail = await AllowedEmail.findOne({ email: inviteEmail }).select('_id');
+    if (!allowedEmail) {
+      return res.status(403).json({
+        error: 'This email is not yet invited to join PlanItVibe.',
+      });
+    }
+
     const pendingInvite = await Invitation.findOne({
       status: 'pending',
       email: { $regex: `^${escapeRegex(inviteEmail)}$`, $options: 'i' },

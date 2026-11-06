@@ -88,6 +88,12 @@ const logsBody = document.getElementById('logs-body');
 const appNav = document.getElementById('app-nav');
 const logsPage = document.getElementById('logs-page');
 const settingsPage = document.getElementById('settings-page');
+const allowedPage = document.getElementById('allowed-emails-page');
+const allowedStatus = document.getElementById('allowed-status');
+const allowedBody = document.getElementById('allowed-body');
+const inviteModeLineEl = document.getElementById('invite-mode-line');
+const inviteModeSelect = document.getElementById('invite-mode');
+const sendInvitesButton = document.getElementById('send-invites');
 const settingsStatus = document.getElementById('settings-status');
 const zoneSelect = document.getElementById('display-time-zone');
 const searchDelayInput = document.getElementById('search-delay');
@@ -104,6 +110,8 @@ let activityExplorerName = '';
 let explorerSeq = 0;
 let planExplorerSeq = 0;
 let activityExplorerSeq = 0;
+let lastInviteMode = 'manual';
+let lastUnsent = 0;
 let userSearchTimer = 0;
 let userSearchSeq = 0;
 let eventOptions = KNOWN_EVENTS.slice();
@@ -422,10 +430,17 @@ function formatLogMessage(event, message) {
   return `${phrase} (${code})`;
 }
 
+function currentPage() {
+  if (location.hash === '#settings') return 'settings';
+  if (location.hash === '#allowed-emails') return 'allowed-emails';
+  return 'logs';
+}
+
 function showPage() {
-  const page = location.hash === '#settings' ? 'settings' : 'logs';
+  const page = currentPage();
   logsPage.hidden = page !== 'logs';
   settingsPage.hidden = page !== 'settings';
+  allowedPage.hidden = page !== 'allowed-emails';
   for (const link of appNav.querySelectorAll('a')) {
     const active = link.getAttribute('href') === `#${page}`;
     if (active) link.setAttribute('aria-current', 'page');
@@ -433,6 +448,7 @@ function showPage() {
   }
   updateCreatedAtHeader();
   if (page === 'logs' && loadedLogs.length) renderLogs(loadedLogs);
+  if (page === 'allowed-emails') loadAllowedEmails();
 }
 
 async function readBody(response) {
@@ -1177,6 +1193,260 @@ document.getElementById('settings-form').addEventListener('submit', (event) => {
   settingsStatus.textContent = `Display time zone is ${label}. Search delay is ${delayLabel}. Text styles saved.`;
   updateCreatedAtHeader();
   if (loadedLogs.length) renderLogs(loadedLogs);
+});
+
+function allowedWhen(value) {
+  if (value == null || value === '') return '—';
+  const text = formatCreatedAt(value);
+  return text || '—';
+}
+
+function inviteModeLine(mode, unsent) {
+  const count = Number.isFinite(unsent) ? unsent : 0;
+  const waiting = count === 1
+    ? '1 address has not been sent an invitation.'
+    : `${count} addresses have not been sent an invitation.`;
+  if (mode === 'automatic') {
+    return `Invite mode is automatic. An invitation is sent when an address is added. ${waiting}`;
+  }
+  return `Invite mode is manual. ${waiting}`;
+}
+
+function applyInviteControls(body) {
+  const mode = body && body.mode === 'automatic' ? 'automatic' : 'manual';
+  const unsent = body && Number.isFinite(Number(body.unsent)) ? Number(body.unsent) : 0;
+  lastInviteMode = mode;
+  lastUnsent = unsent;
+  if (inviteModeSelect) inviteModeSelect.value = mode;
+  if (inviteModeLineEl) inviteModeLineEl.textContent = inviteModeLine(mode, unsent);
+  if (sendInvitesButton) {
+    sendInvitesButton.textContent = `Send invites (${unsent})`;
+    sendInvitesButton.disabled = mode !== 'manual' || unsent < 1;
+  }
+}
+
+function renderAllowedEmails(emails) {
+  allowedBody.replaceChildren();
+  for (const row of emails) {
+    const tr = document.createElement('tr');
+    const emailCell = document.createElement('td');
+    emailCell.textContent = row.email || '';
+    const noteCell = document.createElement('td');
+    noteCell.textContent = row.note || '';
+    const addedCell = document.createElement('td');
+    addedCell.textContent = allowedWhen(row.createdAt);
+    const accountCell = document.createElement('td');
+    accountCell.textContent = row.userCreatedAt ? allowedWhen(row.userCreatedAt) : '—';
+    const invitedCell = document.createElement('td');
+    invitedCell.textContent = row.invitedAt ? allowedWhen(row.invitedAt) : '—';
+    const actionCell = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+    const resend = document.createElement('button');
+    resend.type = 'button';
+    resend.textContent = 'Resend';
+    resend.addEventListener('click', () => resendAllowedInvite(row.email));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Delete';
+    remove.addEventListener('click', () => deleteAllowedEmail(row.email));
+    actions.append(resend, remove);
+    actionCell.appendChild(actions);
+    tr.append(emailCell, noteCell, addedCell, accountCell, invitedCell, actionCell);
+    allowedBody.appendChild(tr);
+  }
+}
+
+async function loadAllowedEmails(options) {
+  const keepStatus = options && options.keepStatus;
+  if (!keepStatus) {
+    allowedStatus.classList.remove('is-error');
+    allowedStatus.textContent = '';
+  }
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/allowed-emails`, { headers: authHeaders() });
+  } catch (err) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (!response.ok) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = messageFrom(body, 'Could not load allowed emails.');
+    return;
+  }
+  renderAllowedEmails(Array.isArray(body.emails) ? body.emails : []);
+  applyInviteControls(body);
+}
+
+async function deleteAllowedEmail(email) {
+  if (!email) return;
+  if (!window.confirm(`Remove ${email} from the allowed list?`)) return;
+  allowedStatus.classList.remove('is-error');
+  allowedStatus.textContent = '';
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/allowed-emails/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (!response.ok) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = messageFrom(body, 'Could not remove that email.');
+    return;
+  }
+  allowedStatus.textContent = `Removed ${email}.`;
+  await loadAllowedEmails({ keepStatus: true });
+}
+
+async function resendAllowedInvite(email) {
+  if (!email) return;
+  if (!window.confirm(`Send an invitation to ${email}?`)) return;
+  allowedStatus.classList.remove('is-error');
+  allowedStatus.textContent = '';
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/allowed-emails/${encodeURIComponent(email)}/invite`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+  } catch (err) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (!response.ok) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = messageFrom(body, 'Invitation email failed.');
+    return;
+  }
+  allowedStatus.textContent = `Invitation sent to ${email}.`;
+  await loadAllowedEmails({ keepStatus: true });
+}
+
+function sentInviteLine(sent, failed) {
+  const sentText = sent === 1 ? 'Sent 1 invitation.' : `Sent ${sent} invitations.`;
+  if (!failed) return sentText;
+  const failedText = failed === 1 ? '1 failed.' : `${failed} failed.`;
+  return `${sentText} ${failedText}`;
+}
+
+if (inviteModeSelect) {
+  inviteModeSelect.addEventListener('change', async () => {
+    const mode = inviteModeSelect.value === 'automatic' ? 'automatic' : 'manual';
+    if (mode === lastInviteMode) return;
+    const previous = lastInviteMode;
+    inviteModeSelect.disabled = true;
+    allowedStatus.classList.remove('is-error');
+    allowedStatus.textContent = '';
+    let response;
+    try {
+      response = await fetch(`${API}/api/admin/allowed-emails/mode`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ mode }),
+      });
+    } catch (err) {
+      inviteModeSelect.value = previous;
+      inviteModeSelect.disabled = false;
+      allowedStatus.classList.add('is-error');
+      allowedStatus.textContent = 'Could not reach the API.';
+      return;
+    }
+    const body = await readBody(response);
+    inviteModeSelect.disabled = false;
+    if (!response.ok) {
+      inviteModeSelect.value = previous;
+      allowedStatus.classList.add('is-error');
+      allowedStatus.textContent = messageFrom(body, 'Could not change the invite mode.');
+      return;
+    }
+    applyInviteControls({ mode: body.mode || mode, unsent: lastUnsent });
+    allowedStatus.classList.remove('is-error');
+    allowedStatus.textContent = mode === 'automatic'
+      ? 'Invite mode is automatic. New addresses are invited when they are added.'
+      : 'Invite mode is manual. Use Send invites for addresses that have not been invited.';
+  });
+}
+
+if (sendInvitesButton) {
+  sendInvitesButton.addEventListener('click', async () => {
+    if (lastInviteMode !== 'manual' || lastUnsent < 1) return;
+    const prompt = lastUnsent === 1
+      ? 'Send 1 unsent invitation?'
+      : `Send ${lastUnsent} unsent invitations?`;
+    if (!window.confirm(prompt)) return;
+    sendInvitesButton.disabled = true;
+    allowedStatus.classList.remove('is-error');
+    allowedStatus.textContent = '';
+    let response;
+    try {
+      response = await fetch(`${API}/api/admin/allowed-emails/send-invites`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch (err) {
+      sendInvitesButton.disabled = false;
+      allowedStatus.classList.add('is-error');
+      allowedStatus.textContent = 'Could not reach the API.';
+      return;
+    }
+    const body = await readBody(response);
+    if (!response.ok) {
+      sendInvitesButton.disabled = lastInviteMode !== 'manual' || lastUnsent < 1;
+      allowedStatus.classList.add('is-error');
+      allowedStatus.textContent = messageFrom(body, 'Could not send invitations.');
+      return;
+    }
+    const sent = Number(body.sent) || 0;
+    const failed = Number(body.failed) || 0;
+    allowedStatus.classList.remove('is-error');
+    allowedStatus.textContent = sentInviteLine(sent, failed);
+    sendInvitesButton.disabled = false;
+    await loadAllowedEmails({ keepStatus: true });
+  });
+}
+
+document.getElementById('allowed-email-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  allowedStatus.classList.remove('is-error');
+  allowedStatus.textContent = '';
+  const email = document.getElementById('allowed-email').value.trim();
+  const note = document.getElementById('allowed-note').value.trim();
+  let response;
+  try {
+    response = await fetch(`${API}/api/admin/allowed-emails`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ email, note }),
+    });
+  } catch (err) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = 'Could not reach the API.';
+    return;
+  }
+  const body = await readBody(response);
+  if (!response.ok) {
+    allowedStatus.classList.add('is-error');
+    allowedStatus.textContent = messageFrom(body, 'Could not add that email.');
+    return;
+  }
+  document.getElementById('allowed-email').value = '';
+  document.getElementById('allowed-note').value = '';
+  let message = `Added ${body.email || email}.`;
+  if (body.invitedAt) message = `${message} Invitation sent.`;
+  else if (lastInviteMode === 'automatic') message = `${message} The invitation email failed.`;
+  allowedStatus.textContent = message;
+  await loadAllowedEmails({ keepStatus: true });
 });
 
 window.addEventListener('hashchange', () => {

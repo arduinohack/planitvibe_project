@@ -12,6 +12,7 @@
     <h1>PlanItVibe Admin</h1>
     <nav id="app-nav" hidden>
       <a href="#logs">Logs</a>
+      <a href="#allowed-emails">Allowed emails</a>
       <a href="#settings">Settings</a>
     </nav>
     <button id="logout" type="button" hidden>Log out</button>
@@ -81,6 +82,45 @@
         </div>
       </section>
       </div>
+
+      <section id="allowed-emails-page" hidden>
+        <h2>Allowed emails</h2>
+        <div class="invite-controls">
+          <p id="invite-mode-line">Invite mode is manual.</p>
+          <label>Invite mode
+            <select id="invite-mode" name="inviteMode">
+              <option value="manual">Manual</option>
+              <option value="automatic">Automatic</option>
+            </select>
+          </label>
+          <button type="button" id="send-invites" disabled>Send invites (0)</button>
+        </div>
+        <form id="allowed-email-form">
+          <label>Email
+            <input id="allowed-email" name="email" type="email" autocomplete="off" required>
+          </label>
+          <label>Note
+            <input id="allowed-note" name="note" type="text" autocomplete="off">
+          </label>
+          <button type="submit">Add</button>
+        </form>
+        <p id="allowed-status" role="status"></p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Note</th>
+                <th>Added on</th>
+                <th>Account created</th>
+                <th>Invited</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="allowed-body"></tbody>
+          </table>
+        </div>
+      </section>
 
       <section id="settings-page" hidden>
         <h2>Settings</h2>

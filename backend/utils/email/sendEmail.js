@@ -18,13 +18,17 @@ function fromAddress(raw) {
   return value || DEFAULT_FROM;
 }
 
-function selectedFrom() {
-  const raw = process.env.EMAIL_FROM;
+function planItVibeFrom(raw) {
   const address = fromAddress(typeof raw === 'string' && raw.trim() !== '' ? raw : DEFAULT_FROM);
   return `${FROM_DISPLAY_NAME} <${address}>`;
 }
 
-async function sendEmail({ to, subject, text, html }) {
+function selectedFrom() {
+  const raw = process.env.EMAIL_FROM;
+  return planItVibeFrom(typeof raw === 'string' && raw.trim() !== '' ? raw : DEFAULT_FROM);
+}
+
+async function sendEmail({ to, subject, text, html, from }) {
   const providerName = selectedProviderName();
   const provider = providers[providerName];
   if (!provider) {
@@ -33,10 +37,12 @@ async function sendEmail({ to, subject, text, html }) {
     throw err;
   }
 
+  const fromHeader = typeof from === 'string' && from.trim() !== '' ? from.trim() : selectedFrom();
+
   try {
     return await provider.send({
       to,
-      from: selectedFrom(),
+      from: fromHeader,
       subject,
       text,
       html,
@@ -47,4 +53,4 @@ async function sendEmail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { sendEmail, selectedProviderName, selectedFrom };
+module.exports = { sendEmail, selectedProviderName, selectedFrom, planItVibeFrom };

@@ -13,7 +13,7 @@ const PlanUser = require('../models/PlanUser');
 const Invitation = require('../models/Invitation');
 const { Event } = require('../models/Event');
 const ActivityRevision = require('../models/ActivityRevision');
-const { allowRegister, clearRegisterInvite } = require('./inviteForRegister');
+const { allowRegister, allowEmail, clearRegisterInvite } = require('./inviteForRegister');
 
 jest.setTimeout(30000);
 
@@ -73,6 +73,7 @@ describe('auth', () => {
   });
 
   test('register without a pending invitation is forbidden', async () => {
+    await allowEmail('ada@example.com');
     const missing = await request(app)
       .post('/api/auth/register')
       .send({
@@ -107,6 +108,7 @@ describe('auth', () => {
   });
 
   test('an invited person registers and the pending invite stays attached', async () => {
+    await allowEmail('ada@example.com');
     await Invitation.create({
       _id: 'pending-invite',
       planId: 'plan-1',
@@ -653,6 +655,7 @@ describe('invites', () => {
     expect(pendingRows[0]._id).toBe(again.body.invitation._id);
     expect(await Invitation.findById(inviteRes.body.invitation._id)).toBeNull();
 
+    await allowEmail(email);
     const registerRes = await request(app)
       .post('/api/auth/register')
       .send({
